@@ -28,9 +28,15 @@ npm test
 npm run build
 npm run eslint
 npm run package
+npm run package:reproducible
 npm audit
 npm run certification-audit
 ```
+
+Packaging removes stale `dist` PBIVIZ files and normalizes entry order,
+timestamps, permissions, platform, and compression before atomically replacing
+the artifact. The reproducibility gate packages twice from the same source and
+requires the exact filename, byte count, and SHA-256 to match.
 
 The package has no privileges, network access, external assets, or unsafe DOM
 APIs. Microsoft certification and validation in a real Power BI host are not

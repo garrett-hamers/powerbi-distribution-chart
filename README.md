@@ -28,6 +28,7 @@ npm test
 npm run build
 npm run eslint
 npm run package
+npm run package:reproducible
 npm audit
 npm run certification-audit
 ```
@@ -35,11 +36,13 @@ npm run certification-audit
 ## Release artifacts
 
 `npm run package` and `npm run certification-audit` normalize the generated
-PBIVIZ ZIP entry timestamps to `1980-01-01T00:00:00Z` and require exactly one
-package matching the generated manifest. This makes the package SHA-256
-reproducible from identical source and locked dependencies. A release manifest
-must record the final main commit, package filename, SHA-256, Node/npm versions,
-and `powerbi-visuals-tools` version; upload that exact file to Blob/AppSource
+PBIVIZ ZIP entry order, timestamps, permissions, platform, and compression
+before atomically replacing the artifact. Stale `dist` PBIVIZ files are
+removed, and exactly one package matching the generated manifest is required.
+The reproducibility gate packages twice from the same source and requires the
+exact filename, byte count, and SHA-256 to match. A release manifest must
+record the final main commit, package filename, SHA-256, Node/npm versions, and
+`powerbi-visuals-tools` version; upload that exact file to Blob/AppSource
 instead of regenerating it.
 
 The package has no privileges, network access, external assets, or unsafe DOM

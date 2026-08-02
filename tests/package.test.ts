@@ -82,8 +82,17 @@ describe("certification-first package contract", () => {
     expect(pbiviz.visual.version).toBe("1.0.0.0");
     expect(packageJson.scripts.eslint).toBe("eslint .");
     expect(packageJson.scripts["certification-audit"]).toBe("npm run package:certification");
+    expect(packageJson.scripts.package).toBe("node scripts/package.mjs");
+    expect(packageJson.scripts["package:reproducible"]).toBe("node scripts/verify-reproducible-package.mjs");
+    expect(packageJson.devDependencies.jszip).toBe("3.10.1");
     expect(packageJson.devDependencies["eslint-plugin-powerbi-visuals"]).toBe("1.1.1");
     expect(packageJson.devDependencies["@typescript-eslint/parser"]).toBe("8.57.2");
+  });
+
+  test("uses the visual identity for the exact package filename", () => {
+    const pbiviz = JSON.parse(fs.readFileSync(path.join(root, "pbiviz.json"), "utf8"));
+    expect(`${pbiviz.visual.guid}.${pbiviz.visual.version}.pbiviz`)
+      .toBe("atlynDistributionA1B2C3D4E5F6G7H8I9J0.1.0.0.0.pbiviz");
   });
 
   test("keeps package manifest references aligned with checked-in source assets", () => {

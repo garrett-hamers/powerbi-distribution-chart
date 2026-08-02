@@ -82,8 +82,11 @@ export interface ReductionDiagnostics {
   receivedRows: number;
   renderedRows: number;
   invalidRows: number;
+  droppedRows: number;
   categoryCount: number;
   reachedWindowLimit: boolean;
+  partialData: boolean;
+  maxObservations: number;
   completeness: "not-asserted";
   message: string;
 }
@@ -167,12 +170,13 @@ export function buildDistributionModel(
 ): DistributionModel {
   const maxObservations = options.maxObservations ?? MAX_OBSERVATIONS;
   const receivedRows = options.receivedRows ?? observations.length;
+  const boundedMaximum = Math.max(1, Math.floor(maxObservations));
   const grouped = new Map<string, { values: ValidObservation[]; invalidCount: number; selectionKey?: string }>();
   let invalidRows = 0;
   let renderedRows = 0;
   let hasHighlights = false;
 
-  observations.slice(0, maxObservations).forEach((observation, originalIndex) => {
+  observations.slice(0, boundedMaximum).forEach((observation, originalIndex) => {
     const category = observation.category || "(Blank category)";
     const group = grouped.get(category) ?? { values: [], invalidCount: 0 };
     if (!grouped.has(category)) {
@@ -230,10 +234,12 @@ export function buildDistributionModel(
     };
   });
 
-  const reachedWindowLimit = receivedRows > maxObservations;
+  const droppedRows = Math.max(0, receivedRows - boundedMaximum);
+  const partialData = receivedRows >= boundedMaximum;
+  const reachedWindowLimit = partialData || droppedRows > 0;
   const message = reachedWindowLimit
-    ? `Partial data may be shown: ${renderedRows.toLocaleString()} valid observations rendered from ${receivedRows.toLocaleString()} received rows; the ${maxObservations.toLocaleString()}-row host window was reached. Completeness is not asserted.`
-    : `${renderedRows.toLocaleString()} valid observations rendered from ${receivedRows.toLocaleString()} received rows. Completeness is not asserted in raw-observation mode.`;
+    ? "Partial data may be shown in the bounded raw-observation window. Completeness is not asserted."
+    : "Completeness is not asserted in raw-observation mode.";
 
   return {
     mode: "raw-observation",
@@ -243,8 +249,11 @@ export function buildDistributionModel(
       receivedRows,
       renderedRows,
       invalidRows,
+      droppedRows,
       categoryCount: distributions.length,
       reachedWindowLimit,
+      partialData,
+      maxObservations: boundedMaximum,
       completeness: "not-asserted",
       message,
     },

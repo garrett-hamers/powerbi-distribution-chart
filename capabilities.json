@@ -4,21 +4,25 @@
     {
       "name": "Category",
       "displayName": "Category",
+      "displayNameKey": "AtlynDistribution_Role_Category",
       "kind": "Grouping"
     },
     {
       "name": "Sample",
       "displayName": "Sample",
+      "displayNameKey": "AtlynDistribution_Role_Sample",
       "kind": "Grouping"
     },
     {
       "name": "Value",
       "displayName": "Value",
+      "displayNameKey": "AtlynDistribution_Role_Value",
       "kind": "Measure"
     },
     {
       "name": "Tooltips",
       "displayName": "Tooltips",
+      "displayNameKey": "AtlynDistribution_Role_Tooltips",
       "kind": "GroupingOrMeasure"
     }
   ],
@@ -27,12 +31,15 @@
       "conditions": [
         {
           "Category": {
+            "min": 1,
             "max": 1
           },
           "Sample": {
+            "min": 1,
             "max": 1
           },
           "Value": {
+            "min": 1,
             "max": 1
           },
           "Tooltips": {
@@ -75,21 +82,44 @@
   "supportsLandingPage": true,
   "supportsKeyboardFocus": true,
   "supportsMultiVisualSelection": true,
-  "tooltips": {},
+  "tooltips": {
+    "supportedTypes": {
+      "default": true
+    },
+    "roles": [
+      "Tooltips"
+    ]
+  },
   "supportsEmptyDataView": true,
   "objects": {
     "general": {
       "properties": {
         "showMean": {
           "displayName": "Show mean",
+          "displayNameKey": "AtlynDistribution_ShowMean",
           "type": {
             "bool": true
           }
         },
         "showOutliers": {
           "displayName": "Show outliers",
+          "displayNameKey": "AtlynDistribution_ShowOutliers",
           "type": {
             "bool": true
+          }
+        },
+        "markerSize": {
+          "displayName": "Marker size",
+          "displayNameKey": "AtlynDistribution_MarkerSize",
+          "type": {
+            "numeric": true
+          }
+        },
+        "labelSize": {
+          "displayName": "Label size",
+          "displayNameKey": "AtlynDistribution_LabelSize",
+          "type": {
+            "numeric": true
           }
         }
       }

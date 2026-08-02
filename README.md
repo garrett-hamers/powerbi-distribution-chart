@@ -1,16 +1,23 @@
 # Atlyn Distribution
 
 Atlyn Distribution is a certification-first Power BI custom visual for grouped
-raw-observation distributions. It requires `Category`, `Sample`, and `Value`
-roles, calculates Hyndman-Fan Type 7 quartiles, and uses Tukey 1.5×IQR
-inlier whiskers. Duplicate outlier observations are retained.
+raw-observation distributions. Its required raw contract is exactly one
+`Category` grouping, exactly one `Sample` grouping, and exactly one numeric
+`Value` measure. The runtime also rejects ungrouped Category/Value aggregates,
+because an aggregate is not a raw distribution. It calculates Hyndman-Fan Type
+7 quartiles and uses Tukey 1.5xIQR inlier whiskers. Duplicate outlier
+observations are retained.
 
 The raw-observation contract is deliberately bounded to the 30,000-row host
-window. The visual reports received, rendered, and invalid row counts and
-never claims population completeness. It also provides native host tooltips,
-selection/context-menu integration, highlights, keyboard navigation, RTL and
-high-contrast support, reduced-motion behavior, and an accessible summary
-table.
+window. This release does not call `fetchMoreData`: categorical grouped
+segments cannot be appended safely without a host-level proof that sample
+identity and duplicate rows are reconciled. Instead, the visual reports the
+received, rendered, invalid, and dropped row counts, visibly labels a full
+window as potentially partial, and never claims population completeness. It
+also provides native host tooltips with touch long-press behavior,
+selection/highlight/context-menu integration, keyboard navigation, RTL,
+high-contrast, reduced-motion, localization, mobile/touch behavior, and an
+accessible summary table.
 
 ## Development
 

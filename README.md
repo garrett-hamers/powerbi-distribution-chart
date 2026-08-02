@@ -32,6 +32,16 @@ npm audit
 npm run certification-audit
 ```
 
+## Release artifacts
+
+`npm run package` and `npm run certification-audit` normalize the generated
+PBIVIZ ZIP entry timestamps to `1980-01-01T00:00:00Z` and require exactly one
+package matching the generated manifest. This makes the package SHA-256
+reproducible from identical source and locked dependencies. A release manifest
+must record the final main commit, package filename, SHA-256, Node/npm versions,
+and `powerbi-visuals-tools` version; upload that exact file to Blob/AppSource
+instead of regenerating it.
+
 The package has no privileges, network access, external assets, or unsafe DOM
 APIs. Microsoft certification and validation in a real Power BI host are not
 claimed by this repository. The visual also respects the host's

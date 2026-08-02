@@ -33,5 +33,11 @@ module.exports = [
     rules: {
       "powerbi-visuals/non-literal-fs-path": "off"
     }
+  },
+  {
+    files: ["scripts/**/*.js"],
+    rules: {
+      "powerbi-visuals/non-literal-fs-path": "off"
+    }
   }
 ];

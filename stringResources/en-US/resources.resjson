@@ -1,0 +1,7 @@
+{
+  "AtlynDistribution_Title": "Atlyn Distribution",
+  "AtlynDistribution_Empty": "Add Category, Sample, and Value fields to show raw observations.",
+  "AtlynDistribution_Invalid": "No finite numeric observations were received for this category.",
+  "AtlynDistribution_SmallSample": "Small sample: statistics are shown, but the sample has fewer than three valid observations.",
+  "AtlynDistribution_Summary": "Accessible distribution summary"
+}

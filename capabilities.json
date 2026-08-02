@@ -1,0 +1,98 @@
+{
+  "privileges": [],
+  "dataRoles": [
+    {
+      "name": "Category",
+      "displayName": "Category",
+      "kind": "Grouping"
+    },
+    {
+      "name": "Sample",
+      "displayName": "Sample",
+      "kind": "Grouping"
+    },
+    {
+      "name": "Value",
+      "displayName": "Value",
+      "kind": "Measure"
+    },
+    {
+      "name": "Tooltips",
+      "displayName": "Tooltips",
+      "kind": "GroupingOrMeasure"
+    }
+  ],
+  "dataViewMappings": [
+    {
+      "conditions": [
+        {
+          "Category": {
+            "max": 1
+          },
+          "Sample": {
+            "max": 1
+          },
+          "Value": {
+            "max": 1
+          },
+          "Tooltips": {
+            "max": 5
+          }
+        }
+      ],
+      "categorical": {
+        "categories": {
+          "for": {
+            "in": "Category"
+          },
+          "dataReductionAlgorithm": {
+            "window": {
+              "count": 30000
+            }
+          }
+        },
+        "values": {
+          "group": {
+            "by": "Sample",
+            "select": [
+              {
+                "for": {
+                  "in": "Value"
+                }
+              },
+              {
+                "for": {
+                  "in": "Tooltips"
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "supportsHighlight": true,
+  "supportsLandingPage": true,
+  "supportsKeyboardFocus": true,
+  "supportsMultiVisualSelection": true,
+  "tooltips": {},
+  "supportsEmptyDataView": true,
+  "objects": {
+    "general": {
+      "properties": {
+        "showMean": {
+          "displayName": "Show mean",
+          "type": {
+            "bool": true
+          }
+        },
+        "showOutliers": {
+          "displayName": "Show outliers",
+          "type": {
+            "bool": true
+          }
+        }
+      }
+    }
+  }
+}

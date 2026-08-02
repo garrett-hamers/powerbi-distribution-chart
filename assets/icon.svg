@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Atlyn Distribution">
+  <rect width="64" height="64" rx="10" fill="#0f172a"/>
+  <path d="M16 17h32v30H16z" fill="none" stroke="#38bdf8" stroke-width="4"/>
+  <path d="M10 32h44M24 12v40M40 12v40" stroke="#f8fafc" stroke-width="3"/>
+  <circle cx="51" cy="15" r="4" fill="#fb7185"/>
+  <circle cx="13" cy="50" r="4" fill="#fb7185"/>
+</svg>

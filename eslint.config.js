@@ -1,7 +1,12 @@
 const tseslint = require("@typescript-eslint/eslint-plugin");
 const parser = require("@typescript-eslint/parser");
+const powerbiVisuals = require("eslint-plugin-powerbi-visuals");
 
 module.exports = [
+  {
+    ignores: ["node_modules/**", "coverage/**", "dist/**", ".tmp/**", "*.pbiviz"],
+  },
+  powerbiVisuals.configs.recommended,
   {
     files: ["src/**/*.ts", "tests/**/*.ts"],
     languageOptions: {
@@ -21,6 +26,12 @@ module.exports = [
       "no-implied-eval": "error",
       "no-new-func": "error",
       "no-undef": "off"
+    }
+  },
+  {
+    files: ["tests/**/*.ts"],
+    rules: {
+      "powerbi-visuals/non-literal-fs-path": "off"
     }
   }
 ];

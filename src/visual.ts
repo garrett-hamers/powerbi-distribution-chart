@@ -16,6 +16,7 @@ type IVisualHost = powerbi.extensibility.visual.IVisualHost;
 type SelectionId = powerbi.visuals.ISelectionId;
 
 const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
+const MAX_RENDERED_MARKERS_PER_DISTRIBUTION = 2000;
 
 type StringKey =
   | "title"
@@ -180,6 +181,11 @@ function finite(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 
+function isDataPointTarget(target: EventTarget | null): boolean {
+  return target instanceof Element
+    && Boolean(target.closest(".atlyn-category, .atlyn-observation, .atlyn-outlier"));
+}
+
 export class Visual implements powerbi.extensibility.visual.IVisual {
   private readonly host: IVisualHost;
   private readonly root: HTMLElement;
@@ -188,8 +194,8 @@ export class Visual implements powerbi.extensibility.visual.IVisual {
   private readonly summaryTable: HTMLTableElement;
   private readonly selectionManager: ReturnType<IVisualHost["createSelectionManager"]>;
   private readonly localizationManager?: powerbi.extensibility.ILocalizationManager;
-  private readonly locale: string;
-  public readonly allowInteractions = true;
+  private locale: string;
+  public readonly allowInteractions: boolean;
   private lastUpdate?: VisualUpdateOptions;
   private lastModel?: DistributionModel;
   private destroyed = false;
@@ -208,6 +214,7 @@ export class Visual implements powerbi.extensibility.visual.IVisual {
   public constructor(options: VisualConstructorOptions) {
     this.host = options.host;
     this.locale = options.host.locale || "en-US";
+    this.allowInteractions = options.host.hostCapabilities?.allowInteractions !== false;
     this.localizationManager = options.host.createLocalizationManager?.();
     this.rtl = isRtl(this.locale);
     this.reducedMotion = isReducedMotion();
@@ -382,6 +389,7 @@ export class Visual implements powerbi.extensibility.visual.IVisual {
   private render(options: VisualUpdateOptions): void {
     this.clearTouchTimers();
     this.hideTooltip(false, true);
+    this.locale = this.host.locale || this.locale;
     const dataView = options.dataViews?.[0];
     const selectedKeys = new Set(this.selectionManager.getSelectionIds()
       .map((id) => {
@@ -390,6 +398,7 @@ export class Visual implements powerbi.extensibility.visual.IVisual {
       })
       .filter((key): key is string => Boolean(key)));
     const observations = extractObservations(dataView, {
+      locale: this.locale,
       selectedKeys,
       createSelectionId: (categoryColumn, categoryIndex, values, group) => {
         const builder = this.host.createSelectionIdBuilder().withCategory(categoryColumn, categoryIndex);
@@ -555,8 +564,10 @@ export class Visual implements powerbi.extensibility.visual.IVisual {
     top: number,
     plotHeight: number,
   ): void {
-    const categorySelected = distribution.observations.some((observation) => observation.selected);
-    const categoryHighlighted = distribution.observations.some((observation) => observation.highlighted);
+    const categorySelected = distribution.selected
+      || distribution.observations.some((observation) => observation.selected);
+    const categoryHighlighted = distribution.highlighted
+      || distribution.observations.some((observation) => observation.highlighted);
     const classes = [
       "atlyn-category",
       categorySelected ? "atlyn-selected" : "",
@@ -567,6 +578,7 @@ export class Visual implements powerbi.extensibility.visual.IVisual {
       role: "button",
       tabindex: "0",
       "data-category": distribution.category,
+      "data-category-key": distribution.categorySelectionKey ?? distribution.category,
       "aria-label": this.accessibleDistributionLabel(distribution),
       "aria-selected": String(categorySelected),
       "data-selected": String(categorySelected),
@@ -580,6 +592,9 @@ export class Visual implements powerbi.extensibility.visual.IVisual {
       this.select(distribution.categorySelectionKey, distribution.categorySelectionId, event);
     });
     group.addEventListener("contextmenu", (event) => {
+      if (!this.allowInteractions) {
+        return;
+      }
       event.preventDefault();
       event.stopPropagation();
       this.showContextMenu(distribution.categorySelectionId ?? distribution.observations[0]?.selectionId, event);
@@ -683,14 +698,17 @@ export class Visual implements powerbi.extensibility.visual.IVisual {
 
     distribution.observations
       .filter((observation) => observation.highlighted || observation.selected)
+      .slice(0, MAX_RENDERED_MARKERS_PER_DISTRIBUTION)
       .forEach((observation, observationIndex) => {
         this.renderObservationMarker(group, distribution, observation, center, y, boxWidth, observationIndex);
       });
 
     if (this.showOutliers) {
-      distribution.outliers.forEach((outlier, outlierIndex) => {
-        this.renderOutlier(group, outlier, center, y, boxWidth, outlierIndex);
-      });
+      distribution.outliers
+        .slice(0, MAX_RENDERED_MARKERS_PER_DISTRIBUTION)
+        .forEach((outlier, outlierIndex) => {
+          this.renderOutlier(group, distribution, outlier, center, y, boxWidth, outlierIndex);
+        });
     }
 
     const stateText = distribution.state === "small-sample" ? svgElement("text", {
@@ -740,6 +758,9 @@ export class Visual implements powerbi.extensibility.visual.IVisual {
       this.select(observation.selectionKey, observation.selectionId, event);
     });
     marker.addEventListener("contextmenu", (event) => {
+      if (!this.allowInteractions) {
+        return;
+      }
       event.preventDefault();
       event.stopPropagation();
       this.showContextMenu(observation.selectionId, event);
@@ -761,6 +782,7 @@ export class Visual implements powerbi.extensibility.visual.IVisual {
 
   private renderOutlier(
     group: SVGGElement,
+    distribution: Distribution,
     outlier: Outlier,
     center: number,
     y: (value: number) => number,
@@ -797,12 +819,15 @@ export class Visual implements powerbi.extensibility.visual.IVisual {
       this.select(outlier.selectionKey, outlier.selectionId, event);
     });
     marker.addEventListener("contextmenu", (event) => {
+      if (!this.allowInteractions) {
+        return;
+      }
       event.preventDefault();
       event.stopPropagation();
       this.showContextMenu(outlier.selectionId, event);
     });
     marker.addEventListener("mouseenter", (event) => this.showTooltip(
-      this.lastModel?.distributions.find((item) => item.category === outlier.category),
+      distribution,
       outlier,
       event,
       false,
@@ -814,12 +839,7 @@ export class Visual implements powerbi.extensibility.visual.IVisual {
     marker.addEventListener("mouseleave", () => this.hideTooltip(false));
     this.attachTouchInteractions(
       marker,
-      (event) => this.showTooltip(
-        this.lastModel?.distributions.find((item) => item.category === outlier.category),
-        outlier,
-        event,
-        true,
-      ),
+      (event) => this.showTooltip(distribution, outlier, event, true),
       (event) => this.moveTooltip(event, true),
       outlier.selectionId,
     );
@@ -834,6 +854,7 @@ export class Visual implements powerbi.extensibility.visual.IVisual {
     element.setAttribute("role", "button");
     element.setAttribute("tabindex", "0");
     element.setAttribute("data-category", observation.category);
+    element.setAttribute("data-category-key", observation.categorySelectionKey ?? observation.category);
     element.setAttribute("data-original-index", String(observation.originalIndex));
     element.setAttribute("aria-label", ariaLabel);
     element.setAttribute("aria-selected", String(observation.selected));
@@ -1088,6 +1109,9 @@ export class Visual implements powerbi.extensibility.visual.IVisual {
   }
 
   private select(selectionKey: string | undefined, selectionId: SelectionId | undefined, event: Event): void {
+    if (!this.allowInteractions) {
+      return;
+    }
     const id = selectionId ?? this.lastModel?.distributions
       .flatMap((distribution) => distribution.observations)
       .find((observation) => observation.selectionKey === selectionKey)?.selectionId
@@ -1099,6 +1123,9 @@ export class Visual implements powerbi.extensibility.visual.IVisual {
   }
 
   private showContextMenu(selectionId: SelectionId | undefined, event: Event, preventDefault = true): void {
+    if (!this.allowInteractions) {
+      return;
+    }
     if (preventDefault) {
       event.preventDefault();
     }
@@ -1110,14 +1137,16 @@ export class Visual implements powerbi.extensibility.visual.IVisual {
   }
 
   private readonly handleCanvasClick = (event: MouseEvent): void => {
-    if (event.target === this.root || event.target === this.svg) {
-      this.selectionManager.clear();
+    if (!isDataPointTarget(event.target)) {
+      if (this.allowInteractions) {
+        this.selectionManager.clear();
+      }
       this.hideTooltip(false);
     }
   };
 
   private readonly handleCanvasContextMenu = (event: MouseEvent): void => {
-    if (event.target === this.root || event.target === this.svg) {
+    if (this.allowInteractions && !isDataPointTarget(event.target)) {
       this.showContextMenu(undefined, event);
     }
   };
@@ -1130,7 +1159,9 @@ export class Visual implements powerbi.extensibility.visual.IVisual {
     const categories = Array.from(this.root.querySelectorAll<SVGGElement>(".atlyn-category"));
     if (event.key === "Escape") {
       event.preventDefault();
-      this.selectionManager.clear();
+      if (this.allowInteractions) {
+        this.selectionManager.clear();
+      }
       this.hideTooltip(false);
       this.root.focus();
       return;
@@ -1157,7 +1188,10 @@ export class Visual implements powerbi.extensibility.visual.IVisual {
     }
     if ((event.key === "Enter" || event.key === " ") && activeIndex >= 0) {
       event.preventDefault();
-      const category = this.lastModel?.distributions.find((item) => item.category === active?.getAttribute("data-category"));
+      const categoryKey = active?.getAttribute("data-category-key");
+      const category = this.lastModel?.distributions.find((item) => (
+        (item.categorySelectionKey ?? item.category) === categoryKey
+      ));
       if (category) {
         if (active?.classList.contains("atlyn-category")) {
           this.select(category.categorySelectionKey, category.categorySelectionId, event);

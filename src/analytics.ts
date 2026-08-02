@@ -75,6 +75,8 @@ export interface Distribution {
   selectionKey?: string;
   categorySelectionKey?: string;
   categorySelectionId?: SelectionId;
+  selected: boolean;
+  highlighted: boolean;
   valueFormat?: string;
 }
 
@@ -118,7 +120,7 @@ export function type7Quantile(sortedValues: readonly number[], probability: numb
   const lowerIndex = Math.max(0, j - 1);
   const upperIndex = Math.min(sortedValues.length - 1, lowerIndex + 1);
 
-  return sortedValues[lowerIndex] + g * (sortedValues[upperIndex] - sortedValues[lowerIndex]);
+  return sortedValues[lowerIndex] * (1 - g) + sortedValues[upperIndex] * g;
 }
 
 function calculateStatistics(values: readonly number[]): DistributionStatistics {
@@ -126,11 +128,16 @@ function calculateStatistics(values: readonly number[]): DistributionStatistics 
   const q1 = type7Quantile(sorted, 0.25);
   const median = type7Quantile(sorted, 0.5);
   const q3 = type7Quantile(sorted, 0.75);
-  const iqr = q3 - q1;
-  const lowerFence = q1 - 1.5 * iqr;
-  const upperFence = q3 + 1.5 * iqr;
+  const rawIqr = q3 - q1;
+  const iqr = Number.isFinite(rawIqr) ? rawIqr : Number.MAX_VALUE;
+  const rawLowerFence = q1 - 1.5 * iqr;
+  const rawUpperFence = q3 + 1.5 * iqr;
+  const lowerFence = Number.isFinite(rawLowerFence) ? rawLowerFence : -Number.MAX_VALUE;
+  const upperFence = Number.isFinite(rawUpperFence) ? rawUpperFence : Number.MAX_VALUE;
   const lowerInliers = sorted.filter((value) => value >= lowerFence);
   const upperInliers = sorted.filter((value) => value <= upperFence);
+  const rawMean = sorted.reduce((sum, value) => sum + value / sorted.length, 0);
+  const mean = Number.isFinite(rawMean) ? rawMean : median;
 
   return {
     n: sorted.length,
@@ -139,7 +146,7 @@ function calculateStatistics(values: readonly number[]): DistributionStatistics 
     median,
     q3,
     max: sorted[sorted.length - 1],
-    mean: sorted.reduce((sum, value) => sum + value, 0) / sorted.length,
+    mean,
     iqr,
     lowerFence,
     upperFence,
@@ -171,21 +178,46 @@ export function buildDistributionModel(
   const maxObservations = options.maxObservations ?? MAX_OBSERVATIONS;
   const receivedRows = options.receivedRows ?? observations.length;
   const boundedMaximum = Math.max(1, Math.floor(maxObservations));
-  const grouped = new Map<string, { values: ValidObservation[]; invalidCount: number; selectionKey?: string }>();
+  const grouped = new Map<string, {
+    category: string;
+    values: ValidObservation[];
+    invalidCount: number;
+    selectionKey?: string;
+    categorySelectionKey?: string;
+    categorySelectionId?: SelectionId;
+    selected: boolean;
+    highlighted: boolean;
+  }>();
   let invalidRows = 0;
   let renderedRows = 0;
   let hasHighlights = false;
 
   observations.slice(0, boundedMaximum).forEach((observation, originalIndex) => {
     const category = observation.category || "(Blank category)";
-    const group = grouped.get(category) ?? { values: [], invalidCount: 0 };
-    if (!grouped.has(category)) {
-      grouped.set(category, group);
+    const groupKey = observation.categorySelectionKey ?? category;
+    const group = grouped.get(groupKey) ?? {
+      category,
+      values: [],
+      invalidCount: 0,
+      selected: false,
+      highlighted: false,
+    };
+    if (!grouped.has(groupKey)) {
+      grouped.set(groupKey, group);
     }
 
     if (observation.selectionKey && !group.selectionKey) {
       group.selectionKey = observation.selectionKey;
     }
+    if (observation.categorySelectionKey && !group.categorySelectionKey) {
+      group.categorySelectionKey = observation.categorySelectionKey;
+    }
+    if (observation.categorySelectionId && !group.categorySelectionId) {
+      group.categorySelectionId = observation.categorySelectionId;
+    }
+    group.selected ||= observation.selected ?? false;
+    group.highlighted ||= observation.highlighted ?? false;
+    hasHighlights ||= group.highlighted;
 
     if (!isFiniteNumber(observation.value)) {
       group.invalidCount += 1;
@@ -207,29 +239,30 @@ export function buildDistributionModel(
       selected: observation.selected ?? false,
       highlighted: observation.highlighted ?? false,
     };
-    hasHighlights ||= validObservation.highlighted;
     group.values.push(validObservation);
     renderedRows += 1;
   });
 
-  const distributions = [...grouped.entries()].map(([category, group]) => {
+  const distributions = [...grouped.values()].map((group) => {
     const statistics = group.values.length > 0 ? calculateStatistics(group.values.map((value) => value.value)) : undefined;
-    const outliers = statistics && statistics.iqr !== 0
+    const outliers = statistics
       ? group.values
         .filter((value) => value.value < statistics.lowerFence || value.value > statistics.upperFence)
         .map((value) => ({ ...value, tooltipValues: [...value.tooltipValues] }))
       : [];
 
     return {
-      category,
+      category: group.category,
       observations: group.values,
       invalidCount: group.invalidCount,
       statistics,
       outliers,
       state: getState(group.values.length, group.values.length + group.invalidCount),
       selectionKey: group.selectionKey,
-      categorySelectionKey: group.values[0]?.categorySelectionKey,
-      categorySelectionId: group.values[0]?.categorySelectionId,
+      categorySelectionKey: group.categorySelectionKey,
+      categorySelectionId: group.categorySelectionId,
+      selected: group.selected,
+      highlighted: group.highlighted,
       valueFormat: group.values.find((value) => value.valueFormat)?.valueFormat,
     };
   });

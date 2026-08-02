@@ -49,6 +49,49 @@ describe("Atlyn distribution statistics", () => {
     expect(model.distributions[0].outliers).toHaveLength(0);
   });
 
+  test("retains genuine outliers when the repeated baseline makes IQR zero", () => {
+    const model = buildDistributionModel([
+      observation("A", 0, "zero-1"),
+      observation("A", 0, "zero-2"),
+      observation("A", 0, "zero-3"),
+      observation("A", 0, "zero-4"),
+      observation("A", 100, "high"),
+    ]);
+    const distribution = model.distributions[0];
+
+    expect(distribution.statistics).toMatchObject({
+      q1: 0,
+      median: 0,
+      q3: 0,
+      iqr: 0,
+      lowerFence: 0,
+      upperFence: 0,
+      lowerWhisker: 0,
+      upperWhisker: 0,
+    });
+    expect(distribution.outliers.map((item) => item.sample)).toEqual(["high"]);
+  });
+
+  test("keeps tied fence values as inliers while retaining values outside the fence", () => {
+    const model = buildDistributionModel([
+      observation("A", 0, "zero-1"),
+      observation("A", 0, "zero-2"),
+      observation("A", 0, "zero-3"),
+      observation("A", 0, "zero-4"),
+      observation("A", 0, "zero-5"),
+      observation("A", 0, "zero-6"),
+      observation("A", 0, "zero-7"),
+      observation("A", 0, "zero-8"),
+      observation("A", 100, "high-1"),
+      observation("A", 100, "high-2"),
+    ]);
+    const distribution = model.distributions[0];
+
+    expect(distribution.statistics?.iqr).toBe(0);
+    expect(distribution.outliers.map((item) => item.sample)).toEqual(["high-1", "high-2"]);
+    expect(distribution.statistics?.upperWhisker).toBe(0);
+  });
+
   test("handles one and two valid observations with truthful small-sample state", () => {
     const one = buildDistributionModel([observation("one", 7)]).distributions[0];
     const two = buildDistributionModel([observation("two", 2), observation("two", 8)]).distributions[0];
@@ -62,12 +105,14 @@ describe("Atlyn distribution statistics", () => {
       q3: 7,
       max: 7,
     });
+    expect(one.outliers).toHaveLength(0);
     expect(two.statistics).toMatchObject({
       n: 2,
       q1: 3.5,
       median: 5,
       q3: 6.5,
     });
+    expect(two.outliers).toHaveLength(0);
   });
 
   test("separates invalid values from valid values and preserves empty input", () => {
@@ -86,6 +131,32 @@ describe("Atlyn distribution statistics", () => {
     expect(isFiniteNumber(0)).toBe(true);
     expect(isFiniteNumber(-1)).toBe(true);
     expect(isFiniteNumber(Infinity)).toBe(false);
+  });
+
+  test("retains selection and highlight state for invalid category rows", () => {
+    const model = buildDistributionModel([{
+      ...observation("invalid", Number.NaN),
+      categorySelectionKey: "category:invalid",
+      selected: true,
+      highlighted: true,
+    }]);
+    const distribution = model.distributions[0];
+
+    expect(distribution.state).toBe("invalid");
+    expect(distribution.selected).toBe(true);
+    expect(distribution.highlighted).toBe(true);
+    expect(model.hasHighlights).toBe(true);
+  });
+
+  test("keeps derived statistics finite for finite extreme values", () => {
+    const distribution = buildDistributionModel([
+      observation("extreme", -Number.MAX_VALUE),
+      observation("extreme", Number.MAX_VALUE),
+    ]).distributions[0];
+
+    Object.values(distribution.statistics ?? {}).forEach((value) => {
+      expect(Number.isFinite(value)).toBe(true);
+    });
   });
 
   test("reports bounded reduction without claiming completeness", () => {
@@ -124,5 +195,23 @@ describe("Atlyn distribution statistics", () => {
     expect(model.hasHighlights).toBe(true);
     expect(model.distributions[0].observations[0].selectionId).toBe(selectionId);
     expect(model.distributions[0].observations[0].selected).toBe(true);
+  });
+
+  test("keeps category identities independent when display labels repeat", () => {
+    const firstCategoryId = { getKey: () => "category:first" } as never;
+    const secondCategoryId = { getKey: () => "category:second" } as never;
+    const model = buildDistributionModel([
+      { ...observation("Repeated", 1, "first-1"), categorySelectionId: firstCategoryId, categorySelectionKey: "category:first" },
+      { ...observation("Repeated", 2, "first-2"), categorySelectionId: firstCategoryId, categorySelectionKey: "category:first" },
+      { ...observation("Repeated", 10, "second-1"), categorySelectionId: secondCategoryId, categorySelectionKey: "category:second" },
+      { ...observation("Repeated", 20, "second-2"), categorySelectionId: secondCategoryId, categorySelectionKey: "category:second" },
+    ]);
+
+    expect(model.distributions).toHaveLength(2);
+    expect(model.distributions.map((item) => item.categorySelectionKey)).toEqual([
+      "category:first",
+      "category:second",
+    ]);
+    expect(model.distributions.map((item) => item.statistics?.n)).toEqual([2, 2]);
   });
 });

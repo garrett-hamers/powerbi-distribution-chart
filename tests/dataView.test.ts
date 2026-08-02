@@ -93,6 +93,63 @@ describe("Power BI raw-observation contract", () => {
     expect(extractObservations(dataView)).toEqual([]);
   });
 
+  test("rejects categorical mappings with duplicate required roles", () => {
+    const categoryColumn = {
+      source: { displayName: "Category", roles: { Category: true } },
+      values: ["A"],
+    };
+    const duplicateValue = {
+      source: { displayName: "Value 2", roles: { Value: true } },
+      values: [2],
+    };
+    const valueColumn = {
+      source: { displayName: "Value 1", roles: { Value: true } },
+      values: [1],
+    };
+    const values = [valueColumn, duplicateValue] as unknown as powerbi.DataViewValueColumns;
+    values.grouped = () => [{ name: "Sample", values: [valueColumn, duplicateValue] }];
+
+    expect(extractObservations({
+      categorical: {
+        categories: [categoryColumn, { ...categoryColumn, values: ["B"] }],
+        values,
+      },
+    } as unknown as powerbi.DataView)).toEqual([]);
+
+    expect(extractObservations({
+      categorical: {
+        categories: [categoryColumn],
+        values,
+      },
+    } as unknown as powerbi.DataView)).toEqual([]);
+  });
+
+  test("formats date categories and samples with the requested locale", () => {
+    const date = new Date("2026-08-01T00:00:00.000Z");
+    const valueColumn = {
+      source: { displayName: "Value", roles: { Value: true } },
+      values: [42],
+    };
+    const values = [valueColumn] as unknown as powerbi.DataViewValueColumns;
+    values.grouped = () => [{
+      name: date,
+      values: [valueColumn],
+    }] as unknown as powerbi.DataViewValueColumnGroup[];
+
+    const observations = extractObservations({
+      categorical: {
+        categories: [{
+          source: { displayName: "Category", roles: { Category: true } },
+          values: [date],
+        }],
+        values,
+      },
+    } as unknown as powerbi.DataView, { locale: "de-DE" });
+
+    expect(observations[0].category).toBe(new Intl.DateTimeFormat("de-DE").format(date));
+    expect(observations[0].sample).toBe(new Intl.DateTimeFormat("de-DE").format(date));
+  });
+
   test("does not infer raw observations from an ungrouped Category and Value aggregate", () => {
     const dataView = {
       categorical: {

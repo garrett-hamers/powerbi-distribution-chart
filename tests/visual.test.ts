@@ -36,8 +36,9 @@ function makeVisualHost() {
         withSeries: (_values: unknown, group: { name?: unknown }) => typeof builder;
         createSelectionId: () => object;
       } = {
-        withCategory: (_column: unknown, index: number) => {
-          key = `category:${index}`;
+        withCategory: (column: unknown, index: number) => {
+          const categoryValues = (column as { values?: unknown[] }).values;
+          key = `category:${String(categoryValues?.[index])}`;
           return builder;
         },
         withSeries: (_values: unknown, group: { name?: unknown }) => {
@@ -141,6 +142,28 @@ function makeRichDataView(): powerbi.DataView {
   } as unknown as powerbi.DataView;
 }
 
+function makeDegenerateDataView(): powerbi.DataView {
+  const categoryColumn = {
+    source: { displayName: "Category", roles: { Category: true } },
+    values: ["A", "A", "A", "A", "A"],
+  };
+  const valueColumn = {
+    source: { displayName: "Value", roles: { Value: true }, format: "0" },
+    values: [0, 0, 0, 0, 100],
+  };
+  const values = [valueColumn] as unknown as powerbi.DataViewValueColumns;
+  values.grouped = () => [{
+    name: "Sample",
+    values: [valueColumn],
+  }];
+  return {
+    categorical: {
+      categories: [categoryColumn],
+      values,
+    },
+  } as unknown as powerbi.DataView;
+}
+
 function makeSettingsDataView(): powerbi.DataView {
   const dataView = makeRichDataView() as powerbi.DataView;
   dataView.metadata = {
@@ -183,11 +206,37 @@ describe("Visual interaction and lifecycle behavior", () => {
       clientY: 20,
     }));
     expect(selectionManager.showContextMenu).toHaveBeenCalled();
+    element.querySelector(".atlyn-chart")?.dispatchEvent(new MouseEvent("contextmenu", {
+      bubbles: true,
+      clientX: 15,
+      clientY: 25,
+    }));
+    expect(selectionManager.showContextMenu).toHaveBeenCalledTimes(2);
     expect(element.querySelector(".atlyn-category")?.getAttribute("aria-label")).toContain("Type 7");
     expect(element.querySelector(".atlyn-category")?.getAttribute("aria-selected")).toBe("true");
     expect(host.tooltipService.hide).toHaveBeenCalled();
     visual.destroy();
     expect(element.childElementCount).toBe(0);
+  });
+
+  test("renders a zero-IQR extreme as an outlier", () => {
+    const hostDetails = makeVisualHost();
+    const element = document.createElement("div");
+    document.body.appendChild(element);
+    const visual = new Visual({
+      element,
+      host: hostDetails.host as unknown as powerbi.extensibility.visual.IVisualHost,
+    });
+    visual.update({
+      dataViews: [makeDegenerateDataView()],
+      viewport: { width: 500, height: 300 },
+      type: 2,
+    } as unknown as powerbi.extensibility.visual.VisualUpdateOptions);
+
+    expect(element.querySelectorAll(".atlyn-outlier")).toHaveLength(1);
+    expect(element.querySelector(".atlyn-outlier")?.getAttribute("data-sample")).toBe("Sample");
+    expect(element.querySelector(".atlyn-summary")?.textContent).toContain("1");
+    visual.destroy();
   });
 
   test("makes highlights and selected observations visible with semantic states", () => {
@@ -349,6 +398,35 @@ describe("Visual interaction and lifecycle behavior", () => {
     expect(element.querySelector(".atlyn-box")?.getAttribute("stroke-width")).toBe("2");
     element.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     expect(hostDetails.selectionManager.clear).toHaveBeenCalled();
+    visual.destroy();
+  });
+
+  test("gates selection and context menus when the host disallows interactions", () => {
+    const hostDetails = makeVisualHost();
+    Object.assign(hostDetails.host, { hostCapabilities: { allowInteractions: false } });
+    const element = document.createElement("div");
+    document.body.appendChild(element);
+    const visual = new Visual({
+      element,
+      host: hostDetails.host as unknown as powerbi.extensibility.visual.IVisualHost,
+    });
+    visual.update({
+      dataViews: [makeRichDataView()],
+      viewport: { width: 500, height: 300 },
+      type: 2,
+    } as unknown as powerbi.extensibility.visual.VisualUpdateOptions);
+
+    expect(visual.allowInteractions).toBe(false);
+    element.querySelector(".atlyn-category")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    element.querySelector(".atlyn-category")?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true }));
+    const outlierContextMenu = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+    element.querySelector(".atlyn-outlier")?.dispatchEvent(outlierContextMenu);
+    element.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+
+    expect(hostDetails.selectionManager.select).not.toHaveBeenCalled();
+    expect(hostDetails.selectionManager.clear).not.toHaveBeenCalled();
+    expect(hostDetails.selectionManager.showContextMenu).not.toHaveBeenCalled();
+    expect(outlierContextMenu.defaultPrevented).toBe(false);
     visual.destroy();
   });
 

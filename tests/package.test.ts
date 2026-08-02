@@ -1,5 +1,10 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
+import { createHash } from "node:crypto";
+import JSZip from "jszip";
+
+const { FIXED_ZIP_DATE, normalizePackage } = require("../scripts/normalize-pbiviz");
 
 const root = path.resolve(__dirname, "..");
 const capabilities = JSON.parse(fs.readFileSync(path.join(root, "capabilities.json"), "utf8")) as {
@@ -19,6 +24,36 @@ const capabilities = JSON.parse(fs.readFileSync(path.join(root, "capabilities.js
 };
 
 describe("certification-first package contract", () => {
+  test("normalizes ZIP metadata for reproducible package hashes", async () => {
+    const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), "atlyn-package-"));
+    const firstPath = path.join(temporaryRoot, "first.pbiviz");
+    const secondPath = path.join(temporaryRoot, "second.pbiviz");
+    const createPackage = async (outputPath: string, date: Date) => {
+      const zip = new JSZip();
+      zip.file("package.json", "{}", { date });
+      zip.file("resources/entry.txt", "payload", { date });
+      fs.writeFileSync(outputPath, await zip.generateAsync({ type: "nodebuffer" }));
+    };
+
+    try {
+      await createPackage(firstPath, new Date("2026-08-02T18:00:00Z"));
+      await createPackage(secondPath, new Date("2026-08-02T18:01:00Z"));
+      await normalizePackage(firstPath);
+      await normalizePackage(secondPath);
+
+      const hash = (filePath: string) => createHash("sha256")
+        .update(fs.readFileSync(filePath))
+        .digest("hex");
+      expect(hash(firstPath)).toBe(hash(secondPath));
+      const normalized = await JSZip.loadAsync(fs.readFileSync(firstPath));
+      expect(Object.values(normalized.files).every((entry) => (
+        entry.date.getTime() === FIXED_ZIP_DATE.getTime()
+      ))).toBe(true);
+    } finally {
+      fs.rmSync(temporaryRoot, { recursive: true, force: true });
+    }
+  });
+
   test("declares stable visual metadata, roles, bounded reduction, and no privileges", () => {
     const pbiviz = JSON.parse(fs.readFileSync(path.join(root, "pbiviz.json"), "utf8"));
     const roleNames = capabilities.dataRoles.map((role: { name: string }) => role.name);

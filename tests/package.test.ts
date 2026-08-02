@@ -85,9 +85,6 @@ describe("certification-first package contract", () => {
     expect(packageJson.scripts.package).toBe("node scripts/package.mjs");
     expect(packageJson.scripts["package:reproducible"]).toBe("node scripts/verify-reproducible-package.mjs");
     expect(packageJson.devDependencies.jszip).toBe("3.10.1");
-    expect(packageJson.scripts.package).toBe("node scripts/package.mjs");
-    expect(packageJson.scripts["package:reproducible"]).toBe("node scripts/verify-reproducible-package.mjs");
-    expect(packageJson.devDependencies.jszip).toBe("3.10.1");
     expect(packageJson.devDependencies["eslint-plugin-powerbi-visuals"]).toBe("1.1.1");
     expect(packageJson.devDependencies["@typescript-eslint/parser"]).toBe("8.57.2");
   });

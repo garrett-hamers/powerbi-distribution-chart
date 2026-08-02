@@ -1,0 +1,22 @@
+{
+  "visual": {
+    "name": "atlynDistribution",
+    "displayName": "Atlyn Distribution",
+    "guid": "atlynDistributionA1B2C3D4E5F6G7H8I9J0",
+    "visualClassName": "Visual",
+    "version": "1.0.0.0",
+    "description": "A truthful grouped distribution box plot with Type 7 quartiles and Tukey whiskers.",
+    "supportUrl": "https://github.com/garrett-hamers/powerbi-distribution-chart/issues"
+  },
+  "apiVersion": "5.11.0",
+  "externalJS": null,
+  "dependencies": null,
+  "capabilities": "capabilities.json",
+  "author": {
+    "name": "Atlyn",
+    "email": "garrett-hamers@users.noreply.github.com"
+  },
+  "assets": {
+    "icon": "assets/icon.svg"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "es2017",
+    "module": "commonjs",
+    "lib": ["es2017", "dom"],
+    "moduleResolution": "node",
+    "strict": true,
+    "strictNullChecks": false,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "outDir": "./.tmp/tsc",
+    "sourceMap": true
+  },
+  "files": ["src/visual.ts"],
+  "include": ["src/**/*.ts", "tests/**/*.ts"]
+}

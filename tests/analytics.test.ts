@@ -95,8 +95,22 @@ describe("Atlyn distribution statistics", () => {
     expect(model.diagnostics.receivedRows).toBe(MAX_OBSERVATIONS + 5);
     expect(model.diagnostics.renderedRows).toBe(MAX_OBSERVATIONS);
     expect(model.diagnostics.reachedWindowLimit).toBe(true);
+    expect(model.diagnostics.partialData).toBe(true);
+    expect(model.diagnostics.droppedRows).toBe(5);
+    expect(model.diagnostics.maxObservations).toBe(MAX_OBSERVATIONS);
     expect(model.diagnostics.completeness).toBe("not-asserted");
     expect(model.diagnostics.message).toContain("Completeness is not asserted");
+  });
+
+  test("marks a full bounded window as potentially partial without claiming completeness", () => {
+    const observations = Array.from({ length: MAX_OBSERVATIONS }, (_, index) => observation("A", index));
+    const model = buildDistributionModel(observations);
+
+    expect(model.diagnostics.receivedRows).toBe(MAX_OBSERVATIONS);
+    expect(model.diagnostics.renderedRows).toBe(MAX_OBSERVATIONS);
+    expect(model.diagnostics.droppedRows).toBe(0);
+    expect(model.diagnostics.partialData).toBe(true);
+    expect(model.diagnostics.message).toContain("bounded raw-observation window");
   });
 
   test("keeps categories independent and retains selection/highlight metadata", () => {

@@ -19,6 +19,10 @@ export interface DataViewExtractionOptions {
     values: powerbi.DataViewValueColumns,
     group?: DataViewValueColumnGroup,
   ) => SelectionId | undefined;
+  createTableSelectionId?: (
+    table: powerbi.DataViewTable,
+    rowIndex: number,
+  ) => SelectionId | undefined;
   selectedKeys?: ReadonlySet<string>;
 }
 
@@ -90,77 +94,51 @@ function extractCategorical(
   categorical: powerbi.DataViewCategorical,
   options: DataViewExtractionOptions,
 ): RawObservation[] {
-  const categoryColumn = categorical.categories?.find((column) => hasRole(column, "Category"))
-    ?? categorical.categories?.[0];
+  const categoryColumn = categorical.categories?.find((column) => hasRole(column, "Category"));
   const values = categorical.values;
-  if (!categoryColumn || !values) {
+  if (!categoryColumn || !values || typeof values.grouped !== "function") {
     return [];
   }
 
   const categoryCount = categoryColumn.values.length;
-  const groups = typeof values.grouped === "function" ? values.grouped() : [];
+  const groups = values.grouped();
   const observations: RawObservation[] = [];
 
-  if (groups.length > 0) {
-    groups.forEach((group) => {
-      const valueColumn = group.values.find((column) => hasRole(column, "Value"))
-        ?? group.values[0];
-      if (!valueColumn || !hasRole(valueColumn, "Value")) {
-        return;
-      }
-      const tooltipColumns = group.values.filter((column) => hasRole(column, "Tooltips"));
-      const sample = displayValue(group.name, "(Blank sample)");
-
-      for (let categoryIndex = 0; categoryIndex < categoryCount; categoryIndex += 1) {
-        const tooltipValues = tooltipColumns.map((column) => ({
-          label: column.source.displayName,
-          value: valueAt(column, categoryIndex),
-          format: column.source.format,
-        }));
-        observations.push(createRawObservation(
-          displayValue(categoryColumn.values[categoryIndex], "(Blank category)"),
-          sample,
-          valueAt(valueColumn, categoryIndex),
-          categoryColumn,
-          categoryIndex,
-          values,
-          group,
-          valueColumn.source.format,
-          tooltipValues,
-          valueColumn?.highlights?.[categoryIndex] !== undefined
-            && valueColumn.highlights[categoryIndex] !== null,
-          options,
-        ));
-      }
-    });
-    return observations;
-  }
-
-  const valueColumn = values.find((column) => hasRole(column, "Value")) ?? values[0];
-  if (!valueColumn || !hasRole(valueColumn, "Value")) {
+  if (groups.length === 0) {
     return [];
   }
-  const tooltipColumns = values.filter((column) => hasRole(column, "Tooltips"));
-  for (let categoryIndex = 0; categoryIndex < categoryCount; categoryIndex += 1) {
-    observations.push(createRawObservation(
-      displayValue(categoryColumn.values[categoryIndex], "(Blank category)"),
-      `(Row ${categoryIndex + 1})`,
-      valueAt(valueColumn, categoryIndex),
-      categoryColumn,
-      categoryIndex,
-      values,
-      undefined,
-      valueColumn.source.format,
-      tooltipColumns.map((column) => ({
+
+  groups.forEach((group) => {
+    const valueColumn = group.values.find((column) => hasRole(column, "Value"));
+    if (!valueColumn) {
+      return;
+    }
+    const tooltipColumns = group.values.filter((column) => hasRole(column, "Tooltips"));
+    const sample = displayValue(group.name, "(Blank sample)");
+    const rowCount = Math.min(categoryCount, valueColumn.values.length);
+
+    for (let categoryIndex = 0; categoryIndex < rowCount; categoryIndex += 1) {
+      const tooltipValues = tooltipColumns.map((column) => ({
         label: column.source.displayName,
         value: valueAt(column, categoryIndex),
         format: column.source.format,
-      })),
-      valueColumn?.highlights?.[categoryIndex] !== undefined
-        && valueColumn.highlights[categoryIndex] !== null,
-      options,
-    ));
-  }
+      }));
+      observations.push(createRawObservation(
+        displayValue(categoryColumn.values[categoryIndex], "(Blank category)"),
+        sample,
+        valueAt(valueColumn, categoryIndex),
+        categoryColumn,
+        categoryIndex,
+        values,
+        group,
+        valueColumn.source.format,
+        tooltipValues,
+        valueColumn.highlights?.[categoryIndex] !== undefined
+          && valueColumn.highlights[categoryIndex] !== null,
+        options,
+      ));
+    }
+  });
   return observations;
 }
 
@@ -172,16 +150,17 @@ function extractTable(table: powerbi.DataViewTable, options: DataViewExtractionO
     .map((column, index) => ({ column, index }))
     .filter(({ column }) => hasRole(column, "Tooltips"));
 
-  if (categoryIndex < 0 || valueIndex < 0 || !table.rows) {
+  if (categoryIndex < 0 || sampleIndex < 0 || valueIndex < 0 || !table.rows) {
     return [];
   }
 
   return table.rows.map((row, rowIndex) => {
     const identity = table.identity?.[rowIndex];
-    const selectionKey = identity ? String(identity) : undefined;
+    const selectionId = options.createTableSelectionId?.(table, rowIndex);
+    const selectionKey = selectionId?.getKey() ?? (identity ? String(identity) : undefined);
     return {
       category: displayValue(row[categoryIndex], "(Blank category)"),
-      sample: displayValue(sampleIndex >= 0 ? row[sampleIndex] : undefined, `(Row ${rowIndex + 1})`),
+      sample: displayValue(row[sampleIndex], `(Row ${rowIndex + 1})`),
       value: row[valueIndex],
       tooltipValues: tooltipIndexes.map(({ column, index }) => ({
         label: column.displayName,
@@ -189,7 +168,11 @@ function extractTable(table: powerbi.DataViewTable, options: DataViewExtractionO
         format: column.format,
       })),
       selectionKey,
-      selected: selectionKey ? options.selectedKeys?.has(selectionKey) === true : false,
+      selectionId,
+      selected: Boolean(
+        (selectionKey && options.selectedKeys?.has(selectionKey))
+        || (identity && options.selectedKeys?.has(String(identity))),
+      ),
     };
   });
 }

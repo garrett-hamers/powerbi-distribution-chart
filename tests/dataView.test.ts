@@ -55,16 +55,22 @@ describe("Power BI raw-observation contract", () => {
   });
 
   test("builds an invalid state rather than inferring a distribution from an aggregate", () => {
+    const valueColumn = {
+      source: { displayName: "Value", roles: { Value: true } },
+      values: [null as powerbi.PrimitiveValue],
+    };
+    const values = [valueColumn] as unknown as powerbi.DataViewValueColumns;
+    values.grouped = () => [{
+      name: "Sample 1",
+      values: [valueColumn],
+    }];
     const dataView = {
       categorical: {
         categories: [{
           source: { displayName: "Category", roles: { Category: true } },
           values: ["Only category"],
         }],
-        values: [{
-          source: { displayName: "Value", roles: { Value: true } },
-          values: [null],
-        }],
+        values,
       },
     } as unknown as powerbi.DataView;
     const model = buildModelFromDataView(dataView);
@@ -85,5 +91,62 @@ describe("Power BI raw-observation contract", () => {
       },
     } as unknown as powerbi.DataView;
     expect(extractObservations(dataView)).toEqual([]);
+  });
+
+  test("does not infer raw observations from an ungrouped Category and Value aggregate", () => {
+    const dataView = {
+      categorical: {
+        categories: [{
+          source: { displayName: "Category", roles: { Category: true } },
+          values: ["A"],
+        }],
+        values: [{
+          source: { displayName: "Value", roles: { Value: true } },
+          values: [42],
+        }],
+      },
+    } as unknown as powerbi.DataView;
+
+    expect(extractObservations(dataView)).toEqual([]);
+  });
+
+  test("requires Sample in table mappings", () => {
+    const dataView = {
+      table: {
+        columns: [
+          { displayName: "Category", roles: { Category: true } },
+          { displayName: "Value", roles: { Value: true } },
+        ],
+        rows: [["A", 42]],
+      },
+    } as unknown as powerbi.DataView;
+
+    expect(extractObservations(dataView)).toEqual([]);
+  });
+
+  test("builds table selection identities for sample-level interaction", () => {
+    const dataView = {
+      table: {
+        columns: [
+          { displayName: "Category", roles: { Category: true } },
+          { displayName: "Sample", roles: { Sample: true } },
+          { displayName: "Value", roles: { Value: true } },
+        ],
+        rows: [["A", "s1", 42]],
+      },
+    } as unknown as powerbi.DataView;
+    const selectionId = { getKey: () => "row-0" } as unknown as powerbi.visuals.ISelectionId;
+
+    const observations = extractObservations(dataView, {
+      createTableSelectionId: () => selectionId,
+      selectedKeys: new Set(["row-0"]),
+    });
+
+    expect(observations[0]).toMatchObject({
+      sample: "s1",
+      selectionId,
+      selectionKey: "row-0",
+      selected: true,
+    });
   });
 });

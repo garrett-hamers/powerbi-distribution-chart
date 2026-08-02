@@ -72,6 +72,10 @@ function makeVisualHost() {
       renderingFinished: jest.fn(),
       renderingFailed: jest.fn(),
     },
+    persistProperties: jest.fn(),
+    createLocalizationManager: () => ({
+      getDisplayName: (key: string) => key,
+    }),
   };
   return { host, selectionManager };
 }
@@ -137,6 +141,22 @@ function makeRichDataView(): powerbi.DataView {
   } as unknown as powerbi.DataView;
 }
 
+function makeSettingsDataView(): powerbi.DataView {
+  const dataView = makeRichDataView() as powerbi.DataView;
+  dataView.metadata = {
+    columns: [],
+    objects: {
+      general: {
+        showMean: false,
+        showOutliers: false,
+        markerSize: 10,
+        labelSize: 16,
+      },
+    },
+  };
+  return dataView;
+}
+
 describe("Visual interaction and lifecycle behavior", () => {
   afterEach(() => {
     document.body.replaceChildren();
@@ -153,6 +173,10 @@ describe("Visual interaction and lifecycle behavior", () => {
     (categories[0] as SVGGElement).focus();
     categories[0].dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
     expect(selectionManager.select).toHaveBeenCalled();
+    const refreshedCategory = element.querySelector<SVGGElement>(".atlyn-category");
+    refreshedCategory?.focus();
+    refreshedCategory?.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
+    expect(selectionManager.select).toHaveBeenCalledTimes(2);
     categories[0].dispatchEvent(new MouseEvent("contextmenu", {
       bubbles: true,
       clientX: 10,
@@ -160,8 +184,144 @@ describe("Visual interaction and lifecycle behavior", () => {
     }));
     expect(selectionManager.showContextMenu).toHaveBeenCalled();
     expect(element.querySelector(".atlyn-category")?.getAttribute("aria-label")).toContain("Type 7");
+    expect(element.querySelector(".atlyn-category")?.getAttribute("aria-selected")).toBe("true");
+    expect(host.tooltipService.hide).toHaveBeenCalled();
     visual.destroy();
     expect(element.childElementCount).toBe(0);
+  });
+
+  test("makes highlights and selected observations visible with semantic states", () => {
+    const hostDetails = makeVisualHost();
+    const element = document.createElement("div");
+    document.body.appendChild(element);
+    const visual = new Visual({
+      element,
+      host: hostDetails.host as unknown as powerbi.extensibility.visual.IVisualHost,
+    });
+    visual.update({
+      dataViews: [makeRichDataView()],
+      viewport: { width: 500, height: 300 },
+      type: 2,
+    } as unknown as powerbi.extensibility.visual.VisualUpdateOptions);
+
+    const highlighted = element.querySelector(".atlyn-highlight");
+    expect(highlighted).not.toBeNull();
+    expect(highlighted?.getAttribute("aria-selected")).toBe("false");
+    expect(highlighted?.getAttribute("data-highlighted")).toBe("true");
+    expect(element.querySelector(".atlyn-category")?.getAttribute("data-highlighted")).toBe("true");
+
+    const outlier = element.querySelector<SVGElement>(".atlyn-outlier");
+    outlier?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const selectedOutlier = element.querySelector<SVGElement>(".atlyn-outlier");
+    expect(selectedOutlier?.classList.contains("atlyn-selected")).toBe(true);
+    expect(selectedOutlier?.getAttribute("aria-selected")).toBe("true");
+
+    selectedOutlier?.focus();
+    selectedOutlier?.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
+    expect(hostDetails.selectionManager.select).toHaveBeenCalled();
+    visual.destroy();
+  });
+
+  test("supports tooltip show, move, hide, and touch long press", () => {
+    jest.useFakeTimers();
+    const hostDetails = makeVisualHost();
+    const element = document.createElement("div");
+    document.body.appendChild(element);
+    const visual = new Visual({
+      element,
+      host: hostDetails.host as unknown as powerbi.extensibility.visual.IVisualHost,
+    });
+    visual.update({
+      dataViews: [makeRichDataView()],
+      viewport: { width: 500, height: 300 },
+      type: 2,
+    } as unknown as powerbi.extensibility.visual.VisualUpdateOptions);
+
+    const category = element.querySelector<SVGGElement>(".atlyn-category");
+    category?.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true, clientX: 10, clientY: 20 }));
+    category?.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, clientX: 12, clientY: 22 }));
+    category?.dispatchEvent(new MouseEvent("mouseleave", { bubbles: true }));
+    expect(hostDetails.host.tooltipService.show).toHaveBeenCalledWith(expect.objectContaining({
+      isTouchEvent: false,
+      dataItems: expect.arrayContaining([
+        expect.objectContaining({ displayName: "Mean" }),
+      ]),
+    }));
+    expect(hostDetails.host.tooltipService.move).toHaveBeenCalled();
+    expect(hostDetails.host.tooltipService.hide).toHaveBeenCalledWith(expect.objectContaining({
+      isTouchEvent: false,
+    }));
+
+    const outlier = element.querySelector<SVGElement>(".atlyn-outlier");
+    const touchStart = new Event("touchstart", { bubbles: true });
+    Object.defineProperty(touchStart, "changedTouches", {
+      value: [{ clientX: 30, clientY: 40 }],
+    });
+    outlier?.dispatchEvent(touchStart);
+    jest.advanceTimersByTime(600);
+    expect(hostDetails.host.tooltipService.show).toHaveBeenLastCalledWith(expect.objectContaining({
+      isTouchEvent: true,
+      coordinates: [30, 40],
+    }));
+    expect(hostDetails.selectionManager.showContextMenu).toHaveBeenCalled();
+    const touchEnd = new Event("touchend", { bubbles: true });
+    outlier?.dispatchEvent(touchEnd);
+    expect(hostDetails.host.tooltipService.hide).toHaveBeenLastCalledWith(expect.objectContaining({
+      isTouchEvent: true,
+    }));
+    visual.destroy();
+    jest.useRealTimers();
+  });
+
+  test("applies persisted formatting settings to rendering", () => {
+    const hostDetails = makeVisualHost();
+    const element = document.createElement("div");
+    document.body.appendChild(element);
+    const visual = new Visual({
+      element,
+      host: hostDetails.host as unknown as powerbi.extensibility.visual.IVisualHost,
+    });
+    visual.update({
+      dataViews: [makeSettingsDataView()],
+      viewport: { width: 320, height: 220 },
+      type: 2,
+    } as unknown as powerbi.extensibility.visual.VisualUpdateOptions);
+
+    const formattingModel = visual.getFormattingModel();
+    expect(formattingModel?.cards[0]).toMatchObject({
+      groups: [{
+        slices: expect.arrayContaining([
+          expect.objectContaining({ uid: "markerSize" }),
+          expect.objectContaining({ uid: "labelSize" }),
+        ]),
+      }],
+    });
+    expect(element.querySelectorAll(".atlyn-outlier")).toHaveLength(0);
+    expect(element.querySelectorAll("path")).toHaveLength(0);
+    expect(element.querySelector(".atlyn-observation")?.getAttribute("r")).toBe("13");
+    visual.destroy();
+  });
+
+  test("reports rendering failures and propagates the error", () => {
+    const { visual, host } = createVisual();
+    const render = jest.spyOn(visual as unknown as { render: (options: unknown) => void }, "render")
+      .mockImplementation(() => {
+        throw new Error("render failure");
+      });
+
+    expect(() => visual.update({
+      dataViews: [makeDataView()],
+      viewport: { width: 500, height: 300 },
+      type: 2,
+    } as unknown as powerbi.extensibility.visual.VisualUpdateOptions)).toThrow("render failure");
+    expect(host.eventService.renderingStarted).toHaveBeenCalledTimes(2);
+    expect(host.eventService.renderingFinished).toHaveBeenCalledTimes(1);
+    expect(host.eventService.renderingFailed).toHaveBeenCalledWith(
+      expect.anything(),
+      "render failure",
+    );
+    render.mockRestore();
+    visual.destroy();
   });
 
   test("supports clear selection, RTL layout, and high contrast marker semantics", () => {
@@ -182,9 +342,11 @@ describe("Visual interaction and lifecycle behavior", () => {
 
     expect(element.getAttribute("dir")).toBe("rtl");
     expect(element.classList.contains("atlyn-mobile")).toBe(true);
+    expect(element.dataset.reducedMotion).toBe("false");
     expect(element.querySelectorAll(".atlyn-outlier")).toHaveLength(3);
     expect(element.querySelectorAll(".atlyn-highlight")).toHaveLength(1);
     expect(element.querySelector(".atlyn-outlier")?.tagName.toLowerCase()).toBe("path");
+    expect(element.querySelector(".atlyn-box")?.getAttribute("stroke-width")).toBe("2");
     element.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     expect(hostDetails.selectionManager.clear).toHaveBeenCalled();
     visual.destroy();

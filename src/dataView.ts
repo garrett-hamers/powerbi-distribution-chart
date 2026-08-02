@@ -13,6 +13,7 @@ type DataViewValueColumnGroup = powerbi.DataViewValueColumnGroup;
 type SelectionId = powerbi.visuals.ISelectionId;
 
 export interface DataViewExtractionOptions {
+  locale?: string;
   createSelectionId?: (
     categoryColumn: DataViewCategoryColumn,
     categoryIndex: number,
@@ -36,12 +37,14 @@ function hasRole(
   return column.source?.roles?.[role] === true || column.roles?.[role] === true;
 }
 
-function displayValue(value: unknown, fallback: string): string {
+function displayValue(value: unknown, fallback: string, locale = "en-US"): string {
   if (value === null || value === undefined || value === "") {
     return fallback;
   }
   if (value instanceof Date) {
-    return value.toISOString();
+    return Number.isFinite(value.getTime())
+      ? new Intl.DateTimeFormat(locale).format(value)
+      : fallback;
   }
   return String(value);
 }
@@ -94,7 +97,8 @@ function extractCategorical(
   categorical: powerbi.DataViewCategorical,
   options: DataViewExtractionOptions,
 ): RawObservation[] {
-  const categoryColumn = categorical.categories?.find((column) => hasRole(column, "Category"));
+  const categoryColumns = categorical.categories?.filter((column) => hasRole(column, "Category")) ?? [];
+  const categoryColumn = categoryColumns.length === 1 ? categoryColumns[0] : undefined;
   const values = categorical.values;
   if (!categoryColumn || !values || typeof values.grouped !== "function") {
     return [];
@@ -109,12 +113,13 @@ function extractCategorical(
   }
 
   groups.forEach((group) => {
-    const valueColumn = group.values.find((column) => hasRole(column, "Value"));
-    if (!valueColumn) {
+    const valueColumns = group.values.filter((column) => hasRole(column, "Value"));
+    if (valueColumns.length !== 1) {
       return;
     }
+    const valueColumn = valueColumns[0];
     const tooltipColumns = group.values.filter((column) => hasRole(column, "Tooltips"));
-    const sample = displayValue(group.name, "(Blank sample)");
+    const sample = displayValue(group.name, "(Blank sample)", options.locale);
     const rowCount = Math.min(categoryCount, valueColumn.values.length);
 
     for (let categoryIndex = 0; categoryIndex < rowCount; categoryIndex += 1) {
@@ -124,7 +129,7 @@ function extractCategorical(
         format: column.source.format,
       }));
       observations.push(createRawObservation(
-        displayValue(categoryColumn.values[categoryIndex], "(Blank category)"),
+        displayValue(categoryColumn.values[categoryIndex], "(Blank category)", options.locale),
         sample,
         valueAt(valueColumn, categoryIndex),
         categoryColumn,
@@ -143,9 +148,18 @@ function extractCategorical(
 }
 
 function extractTable(table: powerbi.DataViewTable, options: DataViewExtractionOptions): RawObservation[] {
-  const categoryIndex = table.columns.findIndex((column) => hasRole(column, "Category"));
-  const sampleIndex = table.columns.findIndex((column) => hasRole(column, "Sample"));
-  const valueIndex = table.columns.findIndex((column) => hasRole(column, "Value"));
+  const categoryIndexes = table.columns
+    .map((column, index) => hasRole(column, "Category") ? index : -1)
+    .filter((index) => index >= 0);
+  const sampleIndexes = table.columns
+    .map((column, index) => hasRole(column, "Sample") ? index : -1)
+    .filter((index) => index >= 0);
+  const valueIndexes = table.columns
+    .map((column, index) => hasRole(column, "Value") ? index : -1)
+    .filter((index) => index >= 0);
+  const categoryIndex = categoryIndexes.length === 1 ? categoryIndexes[0] : -1;
+  const sampleIndex = sampleIndexes.length === 1 ? sampleIndexes[0] : -1;
+  const valueIndex = valueIndexes.length === 1 ? valueIndexes[0] : -1;
   const tooltipIndexes = table.columns
     .map((column, index) => ({ column, index }))
     .filter(({ column }) => hasRole(column, "Tooltips"));
@@ -157,10 +171,13 @@ function extractTable(table: powerbi.DataViewTable, options: DataViewExtractionO
   return table.rows.map((row, rowIndex) => {
     const identity = table.identity?.[rowIndex];
     const selectionId = options.createTableSelectionId?.(table, rowIndex);
-    const selectionKey = selectionId?.getKey() ?? (identity ? String(identity) : undefined);
+    const identityKey = identity
+      ? (identity as unknown as { getKey?: () => string }).getKey?.() ?? `table-row:${rowIndex}`
+      : undefined;
+    const selectionKey = selectionId?.getKey() ?? identityKey;
     return {
-      category: displayValue(row[categoryIndex], "(Blank category)"),
-      sample: displayValue(row[sampleIndex], `(Row ${rowIndex + 1})`),
+      category: displayValue(row[categoryIndex], "(Blank category)", options.locale),
+      sample: displayValue(row[sampleIndex], `(Row ${rowIndex + 1})`, options.locale),
       value: row[valueIndex],
       tooltipValues: tooltipIndexes.map(({ column, index }) => ({
         label: column.displayName,
@@ -171,7 +188,7 @@ function extractTable(table: powerbi.DataViewTable, options: DataViewExtractionO
       selectionId,
       selected: Boolean(
         (selectionKey && options.selectedKeys?.has(selectionKey))
-        || (identity && options.selectedKeys?.has(String(identity))),
+        || (identityKey && options.selectedKeys?.has(identityKey)),
       ),
     };
   });

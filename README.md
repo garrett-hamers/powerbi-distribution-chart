@@ -6,7 +6,8 @@ raw-observation distributions. Its required raw contract is exactly one
 `Value` measure. The runtime also rejects ungrouped Category/Value aggregates,
 because an aggregate is not a raw distribution. It calculates Hyndman-Fan Type
 7 quartiles and uses Tukey 1.5xIQR inlier whiskers. Duplicate outlier
-observations are retained.
+observations are retained. When IQR is zero, the repeated value is still the
+Tukey fence, so any value outside that fence remains a genuine outlier.
 
 The raw-observation contract is deliberately bounded to the 30,000-row host
 window. This release does not call `fetchMoreData`: categorical grouped
@@ -25,11 +26,14 @@ accessible summary table.
 npm ci
 npm test
 npm run build
-npm run lint
+npm run eslint
 npm run package
 npm audit
+npm run certification-audit
 ```
 
 The package has no privileges, network access, external assets, or unsafe DOM
 APIs. Microsoft certification and validation in a real Power BI host are not
-claimed by this repository.
+claimed by this repository. The visual also respects the host's
+`allowInteractions` capability and caps rendered point markers per
+distribution to keep large bounded data windows responsive.

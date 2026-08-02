@@ -22,6 +22,10 @@ describe("certification-first package contract", () => {
   test("declares stable visual metadata, roles, bounded reduction, and no privileges", () => {
     const pbiviz = JSON.parse(fs.readFileSync(path.join(root, "pbiviz.json"), "utf8"));
     const roleNames = capabilities.dataRoles.map((role: { name: string }) => role.name);
+    const packageJson = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")) as {
+      scripts: Record<string, string>;
+      devDependencies: Record<string, string>;
+    };
 
     expect(capabilities.privileges).toEqual([]);
     expect(roleNames).toEqual(["Category", "Sample", "Value", "Tooltips"]);
@@ -41,6 +45,27 @@ describe("certification-first package contract", () => {
     expect(pbiviz.visual.guid).toBe("atlynDistributionA1B2C3D4E5F6G7H8I9J0");
     expect(pbiviz.apiVersion).toBe("5.11.0");
     expect(pbiviz.visual.version).toBe("1.0.0.0");
+    expect(packageJson.scripts.eslint).toBe("eslint .");
+    expect(packageJson.scripts["certification-audit"]).toBe("npm run package:certification");
+    expect(packageJson.devDependencies["eslint-plugin-powerbi-visuals"]).toBe("1.1.1");
+    expect(packageJson.devDependencies["@typescript-eslint/parser"]).toBe("8.57.2");
+  });
+
+  test("keeps package manifest references aligned with checked-in source assets", () => {
+    const pbiviz = JSON.parse(fs.readFileSync(path.join(root, "pbiviz.json"), "utf8")) as {
+      capabilities: string;
+      assets: { icon: string };
+      externalJS: unknown;
+      dependencies: unknown;
+    };
+
+    expect(fs.existsSync(path.join(root, pbiviz.capabilities))).toBe(true);
+    expect(fs.existsSync(path.join(root, pbiviz.assets.icon))).toBe(true);
+    expect(pbiviz.externalJS).toBeNull();
+    expect(pbiviz.dependencies).toBeNull();
+    expect(fs.existsSync(path.join(root, "src", "visual.ts"))).toBe(true);
+    expect(fs.existsSync(path.join(root, "src", "analytics.ts"))).toBe(true);
+    expect(fs.existsSync(path.join(root, "src", "dataView.ts"))).toBe(true);
   });
 
   test("keeps localization resources aligned with capabilities display-name keys", () => {

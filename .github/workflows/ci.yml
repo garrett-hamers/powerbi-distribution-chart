@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Run tests
+        run: npm test
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Run full ESLint
+        run: npm run eslint
+      - name: Run package lint alias
+        run: npm run lint
+      - name: Build
+        run: npm run build
+      - name: Package visual
+        run: npm run package
+      - name: Audit dependencies
+        run: npm audit --audit-level=high
+      - name: Run certification audit
+        run: npm run certification-audit

@@ -42,7 +42,10 @@ PBIVIZ ZIP entry order, timestamps, permissions, platform, and compression
 before atomically replacing the artifact. Stale `dist` PBIVIZ files are
 removed, and exactly one package matching the generated manifest is required.
 The reproducibility gate packages twice from the same source and requires the
-exact filename, byte count, and SHA-256 to match. A release manifest must
+exact filename, byte count, and SHA-256 to match. `.gitattributes` pins the line
+endings of every text asset that gets read into the package (`*.svg`, `*.resjson`),
+so the artifact is byte-identical on Windows and Linux rather than only
+reproducible per operating system. A release manifest must
 record the final main commit, package filename, SHA-256, Node/npm versions, and
 `powerbi-visuals-tools` version; upload that exact file to Blob/AppSource
 instead of regenerating it.

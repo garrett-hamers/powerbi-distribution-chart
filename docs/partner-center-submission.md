@@ -65,7 +65,7 @@ regenerate it between recording the manifest and uploading.
 | Privacy policy URL | https:// | <https://atlyn.io/legal/privacy> |
 | Terms of use | - | <https://atlyn.io/legal/terms> |
 | EULA | A file, or Microsoft's standard contract | `EULA.md` |
-| Sample report | `.pbix`, fully offline | Offline project committed at `samples/AtlynSample.pbip`; a manual Desktop **Refresh** followed by **Save As** produces the `.pbix` - see section 4.1 |
+| Sample report | `.pbix`, fully offline | Offline project committed at `samples/AtlynSample.pbip`; a manual Desktop **Save As**, after confirming the tables hold data, produces the `.pbix` - see section 4.1 |
 
 ### Visual icon
 
@@ -184,8 +184,8 @@ What is already in the project:
   **DAX calculated table** (`partition Measurements = calculated` with a
   `DATATABLE(...)` source). A calculated table has no data source object at all -
   no Power Query partition, no shared expression, no `dataSources.tmdl` - so there
-  is nothing to authenticate against and nothing to connect to. It must still be
-  **evaluated** before it holds rows, which is what step 4 below does.
+  is nothing to authenticate against and nothing to connect to. It still has to be
+  **evaluated** before it holds rows; steps 3 and 4 below confirm that happened.
 - **The visual embedded as a private custom visual** under
   `AtlynSample.Report/CustomVisuals/`, declared through a `CustomVisual` entry in
   `resourcePackages`. `publicCustomVisuals` is deliberately not used, because it
@@ -201,34 +201,41 @@ Steps:
 2. Run `npm run package` and then `npm run sample-report` so the embedded visual
    matches the exact build you are submitting. (Both are already committed; re-run
    them only after a version bump.)
-3. Open `samples/AtlynSample.pbip`. Desktop shows *"Some of the tables have
-   incomplete or no data."* That is expected and is not a defect: **a PBIP stores
-   definitions only and caches no data at all.**
-4. **REQUIRED - do not skip. Home > Refresh > Schema and data.** This evaluates the
-   calculated table and materializes its 200 rows into the model. A `.pbix` saved
-   straight from a freshly opened project contains **empty tables**, and a sample
-   report with no data fails AppSource review: demonstrating the visual against real
-   data is the entire reason Microsoft requires the sample.
+3. Open `samples/AtlynSample.pbip` and **confirm the visual renders with data** - the
+   diagnostics line should report 200 received and 200 rendered rows.
+4. **If any table shows as empty**, or Desktop reports *"Some of the tables have
+   incomplete or no data"*, run **Home > Refresh > Schema and data**, then re-check
+   step 3. The committed project carries no cached model data, so the table has to
+   be evaluated before it holds rows.
 
-   **Offline check.** This refresh must complete with no credential,
-   authentication, or data source prompt of any kind. If Desktop prompts for
-   credentials, something external has entered the semantic model, the sample is no
-   longer offline, and it must not be submitted - fix the model and regenerate
-   before continuing.
-5. Confirm the visual renders and the diagnostics line reports 200 received and 200
-   rendered rows.
-6. **File > Save As** and choose **Power BI files (\*.pbix)**. Save as
+   **Do not skip the check in step 3.** A `.pbix` saved while the tables are empty
+   ships with empty tables and fails AppSource review: demonstrating the visual
+   against real data is the entire reason Microsoft requires the sample.
+
+   **Offline check.** If Desktop ever prompts for credentials, authentication, or a
+   data source - on open or during a refresh - something external has entered the
+   semantic model. Stop and investigate. The sample is no longer offline and must
+   not be submitted.
+5. **File > Save As** and choose **Power BI files (\*.pbix)**. Save as
    `samples/AtlynSample.pbix` and commit it.
    `npm run audit:submission` will then report the sample report as present.
-7. Re-open the saved `samples/AtlynSample.pbix` and confirm the visual still renders
+6. Re-open the saved `samples/AtlynSample.pbix` and confirm the visual still renders
    200 rows. This is the only way to prove the data was baked into the file rather
    than saved empty.
+
+> **Whether a refresh is actually needed here is untested.** A sibling visual's
+> sample report was observed opening in Desktop with empty tables, but that model
+> uses an M `#table(...)` partition, which Power BI resolves through Power Query.
+> This model is a DAX `DATATABLE` calculated table, which the engine evaluates
+> directly, so Desktop may well materialize it on open with no refresh at all.
+> Neither behaviour is asserted here: step 3 checks, and step 4 fixes it if the
+> check fails. That is correct either way.
 
 > **Verification status.** The project is generated against Microsoft's published
 > PBIP, PBIR, and TMDL schemas and is checked structurally by
 > `tests/sampleReport.test.ts` and `npm run audit:submission`. It has **not** been
 > opened in Power BI Desktop from this repository's automation, because Desktop is
-> Windows-desktop GUI software and is not launched by the build. Steps 3 to 5 above
+> Windows-desktop GUI software and is not launched by the build. Steps 3 and 4 above
 > are therefore also the real-world verification step.
 
 > **Format versions.** `definition.pbir` uses `"version": "4.0"` and

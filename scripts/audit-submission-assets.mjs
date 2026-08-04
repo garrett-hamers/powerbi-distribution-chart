@@ -385,10 +385,10 @@ console.log(`  INFO  Sample .pbix report: ${sampleReportStatus}`);
 if (sampleReportStatus === "MISSING") {
   console.log(`        The offline project is committed at samples/${SAMPLE_SLUG}.pbip and is validated above.`);
   console.log("        A .pbix cannot be produced headlessly - its DataModel part is a binary Analysis");
-  console.log("        Services backup image. Open the PBIP in Power BI Desktop, then REQUIRED:");
-  console.log("        Home > Refresh > Schema and data before File > Save As .pbix. A PBIP caches no");
-  console.log("        data, so saving without that refresh ships a .pbix with empty tables.");
-  console.log("        See docs/partner-center-submission.md section 4.1.");
+  console.log("        Services backup image. Open the PBIP in Power BI Desktop and confirm the visual");
+  console.log("        renders with data; if any table is empty, run Home > Refresh > Schema and data");
+  console.log("        first. Only then File > Save As .pbix - saving while the tables are empty ships");
+  console.log("        a .pbix with no data. See docs/partner-center-submission.md section 4.1.");
 }
 
 if (failures.length > 0) {

@@ -84,6 +84,7 @@ describe("certification-first package contract", () => {
     expect(packageJson.scripts["certification-audit"]).toBe("npm run package:certification");
     expect(packageJson.scripts.package).toBe("node scripts/package.mjs");
     expect(packageJson.scripts["package:reproducible"]).toBe("node scripts/verify-reproducible-package.mjs");
+    expect(packageJson.scripts["release:metadata"]).toBe("node scripts/release-metadata.mjs");
     expect(packageJson.devDependencies.jszip).toBe("3.10.1");
     expect(packageJson.devDependencies["eslint-plugin-powerbi-visuals"]).toBe("1.1.1");
     expect(packageJson.devDependencies["@typescript-eslint/parser"]).toBe("8.57.2");
@@ -110,6 +111,15 @@ describe("certification-first package contract", () => {
     expect(fs.existsSync(path.join(root, "src", "visual.ts"))).toBe(true);
     expect(fs.existsSync(path.join(root, "src", "analytics.ts"))).toBe(true);
     expect(fs.existsSync(path.join(root, "src", "dataView.ts"))).toBe(true);
+  });
+
+  test("ships a Partner Center-ready 300x300 PNG logo asset", () => {
+    const logoPath = path.join(root, "assets", "logo-300x300.png");
+    const logo = fs.readFileSync(logoPath);
+    expect(logo.subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+    expect(logo.subarray(12, 16).toString("ascii")).toBe("IHDR");
+    expect(logo.readUInt32BE(16)).toBe(300);
+    expect(logo.readUInt32BE(20)).toBe(300);
   });
 
   test("keeps localization resources aligned with capabilities display-name keys", () => {

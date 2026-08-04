@@ -4,6 +4,7 @@
   "description": "Certification-first grouped distribution box plot for Power BI.",
   "private": true,
   "overrides": {
+    "hono": "4.12.34",
     "uuid": "11.1.1"
   },
   "scripts": {

@@ -1,7 +1,8 @@
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { hasPngSignature, readPngHeader } from "./png-utils.mjs";
 import { buildSampleCsv } from "./write-sample-dataset.mjs";
+import { SAMPLE_SLUG, buildSampleReportFiles } from "./build-sample-report.mjs";
 
 /**
  * Deterministic gate for the Microsoft AppSource / Partner Center submission assets.
@@ -24,6 +25,18 @@ const PRIVACY_POLICY_URL = "https://atlyn.io/legal/privacy";
 const SUPPORT_URL = "https://atlyn.io/contact";
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const FOUR_PART_VERSION = /^\d+\.\d+\.\d+\.\d+$/;
+const EXTERNAL_SOURCE_TOKENS = [
+  "Sql.Database",
+  "Web.Contents",
+  "File.Contents",
+  "Csv.Document",
+  "Excel.Workbook",
+  "OData.Feed",
+  "Folder.Files",
+  "SharePoint",
+  "Odbc.",
+];
+const EXTERNAL_URL_PATTERN = /\bhttps?:\/\//;
 
 const root = process.cwd();
 const relative = (target) => path.relative(root, target).replaceAll("\\", "/");
@@ -188,7 +201,16 @@ await check("submission dossier is present", () => {
   const dossierPath = path.join(root, "docs", "partner-center-submission.md");
   const bytes = requireNonEmptyFile(dossierPath, 512);
   const contents = readFileSync(dossierPath, "utf8");
-  [FROZEN_GUID, SUPPORT_URL, PRIVACY_POLICY_URL, "EULA.md", "assets/logo-300x300.png"].forEach((token) => {
+  [
+    FROZEN_GUID,
+    SUPPORT_URL,
+    PRIVACY_POLICY_URL,
+    "EULA.md",
+    "assets/logo-300x300.png",
+    // The owner-confirmed licensing decision must stay recorded.
+    "AppSource listing: Free",
+    `samples/${SAMPLE_SLUG}.pbip`,
+  ].forEach((token) => {
     ensure(contents.includes(token), `docs/partner-center-submission.md is missing "${token}".`);
   });
   return `${bytes} bytes`;
@@ -209,23 +231,127 @@ await check("offline sample dataset matches its deterministic generator", async 
   return `${rows.length} rows`;
 });
 
-const sampleReportPath = path.join(root, "assets", "sample-report");
-let sampleReportStatus = "MISSING";
-try {
-  const reports = readdirSync(sampleReportPath).filter((name) => name.toLowerCase().endsWith(".pbix"));
-  sampleReportStatus = reports.length > 0 ? `present (${reports.join(", ")})` : "MISSING";
-} catch {
-  sampleReportStatus = "MISSING";
-}
+await check("offline sample report project matches its deterministic generator", async () => {
+  const normalize = (text) => text.replaceAll("\r\n", "\n");
+  const expected = await buildSampleReportFiles({ root });
+  ensure(expected.size > 0, "Sample report generator produced no files.");
+
+  const packageBuilt = [...expected.keys()].some((key) => key.includes("/CustomVisuals/"));
+  const committed = new Map();
+  const walk = (directory) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const absolute = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        walk(absolute);
+      } else if (entry.isFile()) {
+        committed.set(relative(absolute), readFileSync(absolute, "utf8"));
+      }
+    }
+  };
+  ensure(
+    existsSync(path.join(root, "samples")),
+    "samples/ is missing; run `npm run package` then `npm run sample-report`.",
+  );
+  walk(path.join(root, "samples"));
+
+  // Without a built package the generator cannot emit the embedded visual, so compare only
+  // the files it was able to produce and flag the gap separately.
+  const comparable = packageBuilt
+    ? [...committed.keys()]
+    : [...committed.keys()].filter((key) => !key.includes("/CustomVisuals/"));
+
+  const missing = [...expected.keys()].filter((key) => !committed.has(key));
+  ensure(missing.length === 0, `samples/ is missing generated file(s): ${missing.join(", ")}`);
+
+  const unexpected = comparable.filter((key) => !expected.has(key));
+  ensure(unexpected.length === 0, `samples/ contains unexpected file(s): ${unexpected.join(", ")}`);
+
+  const drifted = comparable.filter((key) => normalize(committed.get(key)) !== normalize(expected.get(key)));
+  ensure(
+    drifted.length === 0,
+    `samples/ is stale; re-run \`npm run package && npm run sample-report\`. Drifted: ${drifted.join(", ")}`,
+  );
+
+  const embeddedNote = packageBuilt
+    ? "embedded visual verified against dist/"
+    : "embedded visual NOT verified (dist/ has no package)";
+  return `${comparable.length} of ${committed.size} files compared, ${embeddedNote}`;
+});
+
+await check("sample report binds the frozen GUID with declared roles and no external source", () => {
+  const capabilities = readJson(path.join(root, "capabilities.json"));
+  const roleNames = new Set(capabilities.dataRoles.map((role) => role.name));
+  const pagesRoot = path.join(root, "samples", `${SAMPLE_SLUG}.Report`, "definition", "pages");
+  const pageIds = readdirSync(pagesRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name);
+  ensure(pageIds.length === 1, `Expected exactly one report page, found ${pageIds.length}.`);
+
+  const visualsRoot = path.join(pagesRoot, pageIds[0], "visuals");
+  const visualIds = readdirSync(visualsRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name);
+  ensure(visualIds.length === 1, `Expected exactly one visual, found ${visualIds.length}.`);
+
+  const visualPath = path.join(visualsRoot, visualIds[0], "visual.json");
+  const visualText = readFileSync(visualPath, "utf8");
+  const visual = JSON.parse(visualText);
+  ensure(
+    visual.visual.visualType === FROZEN_GUID,
+    `Sample report binds "${visual.visual.visualType}" instead of the frozen GUID.`,
+  );
+
+  const stateKeys = Object.keys(visual.visual.query.queryState);
+  stateKeys.forEach((key) => ensure(
+    roleNames.has(key),
+    `queryState key "${key}" is not a capabilities.json data role.`,
+  ));
+  ensure(
+    !visualText.includes("Aggregation"),
+    "Sample report aggregates a field; Atlyn Distribution requires raw, unsummarized observations.",
+  );
+
+  const report = readJson(path.join(root, "samples", `${SAMPLE_SLUG}.Report`, "definition", "report.json"));
+  ensure(
+    report.publicCustomVisuals === undefined,
+    "report.json uses publicCustomVisuals, which resolves from AppSource and is not offline.",
+  );
+  ensure(
+    report.resourcePackages?.some((entry) => entry.type === "CustomVisual" && entry.name === FROZEN_GUID),
+    "report.json is missing the CustomVisual resource package that embeds the visual.",
+  );
+
+  const tmdl = readFileSync(
+    path.join(root, "samples", `${SAMPLE_SLUG}.SemanticModel`, "definition", "tables", "Measurements.tmdl"),
+    "utf8",
+  );
+  EXTERNAL_SOURCE_TOKENS.forEach((token) => ensure(
+    !tmdl.includes(token),
+    `Sample report semantic model references an external data source (${token}).`,
+  ));
+  ensure(
+    !EXTERNAL_URL_PATTERN.test(tmdl),
+    "Sample report semantic model contains a URL, so it is not fully offline.",
+  );
+  ensure(tmdl.includes("#table("), "Sample report semantic model has no inline data literal.");
+
+  return `${stateKeys.join(", ")} bound to ${FROZEN_GUID}`;
+});
+
+const sampleReportPbix = path.join(root, "samples", `${SAMPLE_SLUG}.pbix`);
+const sampleReportStatus = existsSync(sampleReportPbix)
+  ? `present (samples/${SAMPLE_SLUG}.pbix)`
+  : "MISSING";
 
 console.log("Atlyn Distribution - AppSource submission asset audit");
 console.log(checks.join("\n"));
 console.log("");
 console.log(`  INFO  Sample .pbix report: ${sampleReportStatus}`);
 if (sampleReportStatus === "MISSING") {
-  console.log("        Microsoft requires a sample .pbix, which only Power BI Desktop can author.");
-  console.log("        Build it from assets/sample-data/atlyn-distribution-sample.csv using the recipe in");
-  console.log("        docs/partner-center-submission.md. This audit cannot generate or verify it.");
+  console.log(`        The offline project is committed at samples/${SAMPLE_SLUG}.pbip and is validated above.`);
+  console.log("        A .pbix cannot be produced headlessly - its DataModel part is a binary Analysis");
+  console.log("        Services backup image. Open the PBIP in Power BI Desktop once and Save As .pbix;");
+  console.log("        see docs/partner-center-submission.md section 4.1.");
 }
 
 if (failures.length > 0) {

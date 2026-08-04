@@ -115,6 +115,8 @@ const metadata = {
     bundleVersion: distManifest.version,
   },
   submission: {
+    appSourceListing: "Free",
+    monetization: "Atlyn storefront subscription at https://atlyn.io (separate from AppSource)",
     supportUrl: pbiviz.visual.supportUrl,
     privacyPolicyUrl: PRIVACY_POLICY_URL,
     termsUrl: TERMS_URL,
@@ -123,6 +125,7 @@ const metadata = {
     eula: "EULA.md",
     dossier: "docs/partner-center-submission.md",
     sampleDataset: "assets/sample-data/atlyn-distribution-sample.csv",
+    sampleReportProject: "samples/atlyn-distribution-sample.pbip",
   },
   assets: {
     icon: {

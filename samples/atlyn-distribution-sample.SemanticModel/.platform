@@ -1,0 +1,11 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "SemanticModel",
+    "displayName": "Atlyn Distribution Sample"
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "39650f48-c51f-4d7c-b4fd-48a0f5fcfcf4"
+  }
+}

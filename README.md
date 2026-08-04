@@ -78,6 +78,37 @@ not run it; CI validates the committed PNGs instead.
 module the screenshot harness uses, so the committed dataset and the committed
 screenshots can never drift apart.
 
+## Offline sample report
+
+Microsoft requires a sample report that works fully offline. `samples/` holds that
+report as a complete Power BI Desktop project:
+`atlyn-distribution-sample.pbip`, a PBIR report definition, and a TMDL semantic
+model whose single partition is an inline Power Query `#table(...)` literal of all
+200 rows. The visual is embedded as a private custom visual under
+`CustomVisuals/`, declared through a `CustomVisual` resource package rather than
+`publicCustomVisuals`, so nothing is resolved from the AppSource store at render
+time.
+
+`npm run sample-report` regenerates the whole project deterministically from the
+built `.pbiviz`, and `npm run audit:submission` regenerates it in memory and fails
+if the committed tree has drifted. `tests/sampleReport.test.ts` additionally
+asserts that the visual binds the frozen GUID, that every `queryState` key is a
+declared `capabilities.json` data role, that no projection is aggregated, and that
+the semantic model references no external data source.
+
+The embedded bundle is always the plain `npm run package` output, which is the
+artifact recorded in `dist/release-metadata.json` and uploaded to Partner Center.
+`pbiviz package --certification-audit` emits a beautified copy of the same bundle
+for human review, so `npm run certification-audit` repackages normally before
+auditing to keep `dist/` holding the shipping artifact.
+
+A `.pbix` cannot be produced headlessly, because its `DataModel` part is a binary
+Analysis Services backup image. The project is generated against Microsoft's
+published PBIP, PBIR, and TMDL schemas and validated structurally, but it has not
+been opened in Power BI Desktop by this repository's automation. Converting it to
+`.pbix` is one manual **Save As** in Desktop; see section 4.1 of
+`docs/partner-center-submission.md`.
+
 The package has no privileges, network access, external assets, or unsafe DOM
 APIs. Microsoft certification and validation in a real Power BI host are not
 claimed by this repository. The visual also respects the host's

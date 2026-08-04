@@ -1,0 +1,38 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/report/2.0.0/schema.json",
+  "themeCollection": {
+    "baseTheme": {
+      "name": "CY24SU10",
+      "reportVersionAtImport": "5.55",
+      "type": "SharedResources"
+    }
+  },
+  "resourcePackages": [
+    {
+      "name": "atlynDistributionA1B2C3D4E5F6G7H8I9J0",
+      "type": "CustomVisual",
+      "items": [
+        {
+          "name": "atlynDistributionA1B2C3D4E5F6G7H8I9J0.pbiviz.json",
+          "path": "atlynDistributionA1B2C3D4E5F6G7H8I9J0.pbiviz.json",
+          "type": "CustomVisualMetadata"
+        }
+      ]
+    },
+    {
+      "name": "SharedResources",
+      "type": "SharedResources",
+      "items": [
+        {
+          "name": "CY24SU10",
+          "path": "BaseThemes/CY24SU10.json",
+          "type": "BaseTheme"
+        }
+      ]
+    }
+  ],
+  "settings": {
+    "useStylableVisualContainerHeader": true,
+    "defaultDrillFilterOtherVisuals": true
+  }
+}

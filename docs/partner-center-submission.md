@@ -51,7 +51,27 @@ regenerate it between recording the manifest and uploading.
 | Privacy policy URL | https:// | <https://atlyn.io/legal/privacy> |
 | Terms of use | - | <https://atlyn.io/legal/terms> |
 | EULA | A file, or Microsoft's standard contract | `EULA.md` |
-| Sample report | `.pbix`, fully offline | **Owner action required - see section 4** |
+| Sample report | `.pbix`, fully offline | Offline project committed at `samples/atlyn-distribution-sample.pbip`; one manual Desktop **Save As** produces the `.pbix` - see section 4.1 |
+
+### Licensing and pricing - FREE listing (owner-confirmed)
+
+**AppSource listing: Free.**
+
+The visual is published to AppSource as a **free, non-transactable offer**. Do not
+configure a paid offer, a price, a trial, or any Partner Center transactability
+option.
+
+Monetization happens **only** through the Atlyn storefront subscription at
+<https://atlyn.io>, billed through Stripe. That subscription is a separate
+commercial relationship between Atlyn and the customer. It is not sold, metered,
+enforced, or licensed through Microsoft.
+
+In other words: **AppSource licensing is separate from the Atlyn Stripe
+subscription.** The AppSource offer grants the visual itself under `EULA.md` at no
+charge; the Atlyn subscription covers the wider Atlyn product and is out of scope
+for Partner Center. Nothing in the packaged visual performs a license check, calls
+a licensing service, or gates functionality - `capabilities.json` declares no
+privileges and the visual makes no network calls at all.
 
 ### Screenshots
 
@@ -98,30 +118,62 @@ committed sizes above are informational.
 
 These cannot be automated from this repository.
 
-### 4.1 Author the sample `.pbix` (required by Microsoft)
+### 4.1 Save the offline sample report as `.pbix` (required by Microsoft)
 
-A `.pbix` is a proprietary binary that only Power BI Desktop can author, so no
-script in this repository can generate or verify one. Build it as follows:
+Microsoft requires a sample report that works fully offline with no external
+connections. This repository ships that report as a complete Power BI Desktop
+**project** at `samples/atlyn-distribution-sample.pbip`, generated deterministically
+by `npm run sample-report` and validated by `npm run audit:submission` and the Jest
+suite.
 
-1. Run `npm run package` and import
-   `dist/atlynDistributionA1B2C3D4E5F6G7H8I9J0.1.0.0.0.pbiviz` into Power BI Desktop
-   via **Insert -> More visuals -> Import a visual from a file**.
-2. **Get data -> Text/CSV** and load
-   `assets/sample-data/atlyn-distribution-sample.csv` (200 rows: `Category`,
-   `Sample`, `Value`). This is the exact dataset the committed screenshots use.
-3. Choose **Load** (not DirectQuery) so the data is imported and the report works
-   with no external connection.
-4. Add the Atlyn Distribution visual to the page and bind:
-   - `Category` -> **Category** field well
-   - `Sample` -> **Sample** field well
-   - `Value` -> **Value** field well, set to **Don't summarize**
-5. Confirm the report renders offline: close Power BI Desktop, disconnect from the
-   network, reopen the file, and verify the visual still renders.
-6. Save as `assets/sample-report/atlyn-distribution-sample.pbix` and commit it.
+A `.pbix` cannot be produced headlessly: its `DataModel` part is a binary Analysis
+Services backup image. `pbi-tools compile --help` states that *"the PBIX output is
+supported only for report-only projects ('thin' reports), and PBIT for projects
+containing a data model."* So the project is committed in the documented text
+formats and the owner performs one manual save.
+
+What is already in the project:
+
+- **Report** in the documented PBIR format
+  (`atlyn-distribution-sample.Report/definition/**.json`), with the visual bound to
+  `visualType: atlynDistributionA1B2C3D4E5F6G7H8I9J0` and `Category`, `Sample`, and
+  `Value` each projected as a raw **Column** - the PBIR equivalent of *Don't
+  summarize*, which this visual requires.
+- **Semantic model** in TMDL
+  (`atlyn-distribution-sample.SemanticModel/definition/**.tmdl`), whose single
+  partition is an inline Power Query `#table(...)` literal holding all 200 rows.
+  There is no SQL, Web, File, Csv, Excel, OData, Folder, or SharePoint source, so
+  refresh needs no credentials and no network.
+- **The visual embedded as a private custom visual** under
+  `atlyn-distribution-sample.Report/CustomVisuals/`, declared through a
+  `CustomVisual` entry in `resourcePackages`. `publicCustomVisuals` is deliberately
+  not used, because it resolves the visual from the AppSource store and would make
+  the report non-offline.
+
+Steps:
+
+1. In Power BI Desktop, go to **File > Options and settings > Options > Preview
+   features** and enable **Power BI Project (.pbip) save option**, **Store reports
+   using enhanced metadata format (PBIR)**, and **Store semantic model using TMDL
+   format**.
+2. Run `npm run package` and then `npm run sample-report` so the embedded visual
+   matches the exact build you are submitting. (Both are already committed; re-run
+   them only after a version bump.)
+3. Open `samples/atlyn-distribution-sample.pbip`.
+4. Confirm the visual renders and the diagnostics line reports 200 received and 200
+   rendered rows.
+5. Verify it is genuinely offline: disconnect from the network, choose **Refresh**,
+   and confirm the model reloads and the visual still renders.
+6. **File > Save As** and choose **Power BI files (\*.pbix)**. Save as
+   `samples/atlyn-distribution-sample.pbix` and commit it.
    `npm run audit:submission` will then report the sample report as present.
 
-`Don't summarize` on the `Value` field matters: the visual deliberately rejects
-aggregated Category/Value pairs, because an aggregate is not a raw distribution.
+> **Verification status.** The project is generated against Microsoft's published
+> PBIP, PBIR, and TMDL schemas and is checked structurally by
+> `tests/sampleReport.test.ts` and `npm run audit:submission`. It has **not** been
+> opened in Power BI Desktop from this repository's automation, because Desktop is
+> Windows-desktop software and is not available to the build. Step 3 above is
+> therefore also the real-world verification step.
 
 ### 4.2 Partner Center account and listing
 
@@ -129,13 +181,17 @@ aggregated Category/Value pairs, because an aggregate is not a raw distribution.
    tax and payout profile are complete.
 2. Create the Power BI visual offer and upload the exact `.pbiviz` recorded in
    `dist/release-metadata.json`.
-3. Upload `assets/logo-300x300.png` as the logo and the three files in
+3. **Leave the offer FREE.** Do not set a price, a trial, or any transactability
+   option - see the licensing subsection in section 2. Monetization is handled
+   entirely by the Atlyn Stripe subscription at <https://atlyn.io> and is outside
+   Partner Center.
+4. Upload `assets/logo-300x300.png` as the logo and the three files in
    `assets/screenshots/` as the listing screenshots.
-4. Paste the support URL <https://atlyn.io/contact> and the privacy policy URL
+5. Paste the support URL <https://atlyn.io/contact> and the privacy policy URL
    <https://atlyn.io/legal/privacy>.
-5. Attach `EULA.md` as the EULA, or select Microsoft's standard contract.
-6. Upload the sample `.pbix` from section 4.1.
-7. Submit for review.
+6. Attach `EULA.md` as the EULA, or select Microsoft's standard contract.
+7. Upload the sample `.pbix` saved in section 4.1.
+8. Submit for review.
 
 ### 4.3 Pre-submission link check
 
@@ -157,6 +213,7 @@ npm run eslint
 npm run package
 npm run package:reproducible
 npm run release:metadata
+npm run sample-report         # regenerates samples/ from the built .pbiviz
 npm run audit:submission      # deterministic AppSource asset gate
 npm run certification-audit   # pbiviz certification audit + audit:submission
 npm audit --audit-level=high
@@ -166,3 +223,7 @@ npm run screenshots           # re-captures assets/screenshots from the built vi
 `npm run screenshots` needs a locally installed Chrome, Edge, or Chromium (or
 `CHROME_PATH` pointing at one) and Node 22 or newer. It is intentionally not part
 of CI; CI validates the committed PNGs instead.
+
+`npm run sample-report` needs `npm run package` to have run first, because it
+embeds the built `.pbiviz` into the project. `npm run audit:submission` regenerates
+the project in memory and fails if `samples/` has drifted.

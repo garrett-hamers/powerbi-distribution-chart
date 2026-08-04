@@ -81,10 +81,12 @@ describe("certification-first package contract", () => {
     expect(pbiviz.apiVersion).toBe("5.11.0");
     expect(pbiviz.visual.version).toBe("1.0.0.0");
     expect(packageJson.scripts.eslint).toBe("eslint .");
-    expect(packageJson.scripts["certification-audit"]).toBe("npm run package:certification && npm run audit:submission");
+    expect(packageJson.scripts["certification-audit"])
+      .toBe("npm run package:certification && npm run package && npm run audit:submission");
     expect(packageJson.scripts["audit:submission"]).toBe("node scripts/audit-submission-assets.mjs");
     expect(packageJson.scripts.screenshots).toBe("node scripts/capture-screenshots.mjs");
     expect(packageJson.scripts["sample-data"]).toBe("node scripts/write-sample-dataset.mjs");
+    expect(packageJson.scripts["sample-report"]).toBe("node scripts/build-sample-report.mjs");
     expect(packageJson.scripts.package).toBe("node scripts/package.mjs");
     expect(packageJson.scripts["package:reproducible"]).toBe("node scripts/verify-reproducible-package.mjs");
     expect(packageJson.scripts["release:metadata"]).toBe("node scripts/release-metadata.mjs");

@@ -9,6 +9,8 @@
 - Point the packaged support URL and author email at the published Atlyn support channels.
 - Add three real 1366x768 AppSource listing screenshots captured from the packaged visual, plus the offline harness and deterministic sample dataset behind them.
 - Add an AppSource EULA, a Partner Center submission dossier, and a deterministic `npm run audit:submission` gate wired into CI and the certification audit.
+- Record the owner-confirmed free, non-transactable AppSource listing decision and its separation from the Atlyn Stripe subscription.
+- Add a deterministic offline sample report project (PBIP + PBIR + TMDL) with inline literal data and the built visual embedded for offline rendering.
 
 ## 1.0.0
 

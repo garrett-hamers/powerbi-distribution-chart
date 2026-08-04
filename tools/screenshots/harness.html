@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Atlyn Distribution - listing screenshot harness</title>
+    <style>
+      * { box-sizing: border-box; }
+      html, body {
+        width: 1366px;
+        height: 768px;
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        background: #ffffff;
+      }
+      body {
+        display: flex;
+        flex-direction: column;
+        color: #0f172a;
+        font-family: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      header {
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        padding: 24px 40px 18px;
+      }
+      header img { width: 52px; height: 52px; border-radius: 12px; }
+      .brand { font-size: 15px; font-weight: 600; letter-spacing: 0.09em; text-transform: uppercase; color: #0284c7; }
+      .heading { font-size: 26px; font-weight: 600; line-height: 1.2; margin-top: 2px; }
+      main { flex: 1 1 auto; padding: 0 40px; min-height: 0; }
+      .stage {
+        width: 100%;
+        height: 100%;
+        border: 1px solid #e2e8f0;
+        border-radius: 14px;
+        background: #ffffff;
+        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+        overflow: hidden;
+      }
+      #visual { width: 100%; height: 100%; }
+      footer {
+        display: flex;
+        align-items: flex-start;
+        gap: 24px;
+        padding: 18px 40px 24px;
+        font-size: 14px;
+        line-height: 1.45;
+        color: #475569;
+      }
+      .caption { flex: 1 1 auto; max-width: 1000px; }
+      .legend { display: flex; flex-direction: column; gap: 7px; font-size: 12.5px; white-space: nowrap; }
+      .legend span { display: flex; align-items: center; gap: 9px; }
+      .swatch {
+        width: 14px;
+        height: 14px;
+        flex: none;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-style: normal;
+      }
+      .swatch.box { background: #bae6fd; border: 1px solid #334155; border-radius: 2px; }
+      .swatch.median { height: 3px; background: #0284c7; border-radius: 2px; }
+      .swatch.mean { color: #334155; font-size: 16px; font-weight: 700; line-height: 1; }
+      .swatch.outlier { width: 11px; height: 11px; background: #e11d48; border: 1px solid #334155; border-radius: 50%; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <img src="/assets/logo-300x300.png" alt="Atlyn Distribution logo" />
+      <div>
+        <div class="brand">Atlyn Distribution</div>
+        <div class="heading" id="heading"></div>
+      </div>
+    </header>
+    <main>
+      <div class="stage"><div id="visual"></div></div>
+    </main>
+    <footer>
+      <div class="caption" id="caption"></div>
+      <div class="legend">
+        <span><i class="swatch box"></i>Interquartile range (Q1-Q3)</span>
+        <span><i class="swatch median"></i>Median</span>
+        <span><i class="swatch mean">&#215;</i>Mean</span>
+        <span><i class="swatch outlier"></i>Tukey outlier</span>
+      </div>
+    </footer>
+    <script>
+      // The packaged bundle registers itself into window.powerbi.visuals.plugins
+      // when a host object already exists, so install the shim before loading it.
+      window.powerbi = window.powerbi || { visuals: { plugins: {} } };
+    </script>
+    <script src="/visual.js"></script>
+    <script type="module" src="/harness.mjs"></script>
+  </body>
+</html>

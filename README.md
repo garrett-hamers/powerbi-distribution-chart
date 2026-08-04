@@ -31,6 +31,7 @@ npm run package
 npm run package:reproducible
 npm run release:metadata
 npm audit
+npm run audit:submission
 npm run certification-audit
 ```
 
@@ -41,13 +42,90 @@ PBIVIZ ZIP entry order, timestamps, permissions, platform, and compression
 before atomically replacing the artifact. Stale `dist` PBIVIZ files are
 removed, and exactly one package matching the generated manifest is required.
 The reproducibility gate packages twice from the same source and requires the
-exact filename, byte count, and SHA-256 to match. A release manifest must
+exact filename, byte count, and SHA-256 to match. `.gitattributes` pins the line
+endings of every text asset that gets read into the package (`*.svg`, `*.resjson`),
+so the artifact is byte-identical on Windows and Linux rather than only
+reproducible per operating system. A release manifest must
 record the final main commit, package filename, SHA-256, Node/npm versions, and
 `powerbi-visuals-tools` version; upload that exact file to Blob/AppSource
 instead of regenerating it.
 `npm run release:metadata` writes that deterministic manifest to
 `dist/release-metadata.json` and validates the checked-in Partner Center logo at
-`assets/logo-300x300.png`.
+`assets/logo-300x300.png` and the listing screenshots in `assets/screenshots`.
+
+## AppSource submission assets
+
+`docs/partner-center-submission.md` is the submission dossier: it records every
+Partner Center field with its final value, the compliance statements, and the
+remaining manual steps the owner has to perform. `EULA.md` is the listing EULA.
+
+`npm run audit:submission` is the deterministic gate for those assets. It checks
+the required `pbiviz.json` fields (name, display name, frozen GUID, four-part
+version, description, https support URL, author name and email), and asserts all
+three image contracts separately: `assets/icon.png` is a real PNG at exactly
+20x20, `assets/logo-300x300.png` at exactly 300x300, and `assets/screenshots`
+holds one to five PNGs at exactly 1366x768 and at most 1024 KB each. It also
+checks that the EULA and dossier are present and cross-linked, and that
+`assets/sample-data/atlyn-distribution-sample.csv` still
+matches its deterministic generator. It also reports whether the sample `.pbix`
+is present; Microsoft requires one, but only Power BI Desktop can author it, so
+that step stays with the owner and is never faked here.
+
+`npm run icon` re-renders `assets/icon.png` from `assets/icon.svg` at exactly
+20x20 in a headless browser. Microsoft documents the packaged visual icon as a PNG
+at 20x20, but `powerbi-visuals-tools` does not enforce it: it embeds whatever
+`assets.icon` points at and hard-codes `assets/icon.png` into the packaged
+manifest either way, so an SVG source silently produces a manifest/payload
+mismatch. The SVG stays the editable source; the PNG is what ships.
+
+`npm run screenshots` regenerates `assets/screenshots` from the *packaged*
+visual. It runs `npm run package`, extracts the bundled JavaScript from the
+`.pbiviz`, serves `tools/screenshots` on loopback, and captures each scene over
+the Chrome DevTools Protocol at exactly 1366x768. It needs a locally installed
+Chrome, Edge, or Chromium (or `CHROME_PATH`) and Node 22 or newer, and it fails
+loudly rather than producing a placeholder if no browser is available. CI does
+not run it; CI validates the committed PNGs instead.
+
+`npm run sample-data` rewrites the offline sample CSV from the same deterministic
+module the screenshot harness uses, so the committed dataset and the committed
+screenshots can never drift apart.
+
+## Offline sample report
+
+Microsoft requires a sample report that works fully offline. `samples/` holds that
+report as a complete Power BI Desktop project: `AtlynSample.pbip`, a PBIR report
+definition, and a TMDL semantic model that holds all 200 rows in a **DAX
+calculated table** (`DATATABLE(...)`). A calculated table has no data source
+object at all - no Power Query partition, no shared expression, no
+`dataSources.tmdl` - so there is nothing to authenticate against and nothing to
+refresh. The visual is embedded as a private custom visual under
+`CustomVisuals/`, declared through a `CustomVisual` resource package rather than
+`publicCustomVisuals`, so nothing is resolved from the AppSource store at render
+time.
+
+The project uses only the native, publicly documented PBIP folder format; no
+third-party packaging tool is involved.
+
+`npm run sample-report` regenerates the whole project deterministically from the
+built `.pbiviz`, and `npm run audit:submission` regenerates it in memory and fails
+if the committed tree has drifted. `tests/sampleReport.test.ts` additionally
+asserts that the visual binds the frozen GUID, that every `queryState` key is a
+declared `capabilities.json` data role, that no projection is aggregated, and that
+the semantic model contains no Power Query partition, shared expression, or data
+source declaration.
+
+The embedded bundle is always the plain `npm run package` output, which is the
+artifact recorded in `dist/release-metadata.json` and uploaded to Partner Center.
+`pbiviz package --certification-audit` emits a beautified copy of the same bundle
+for human review, so `npm run certification-audit` repackages normally before
+auditing to keep `dist/` holding the shipping artifact.
+
+A `.pbix` cannot be produced headlessly, because its `DataModel` part is a binary
+Analysis Services backup image. The project is generated against Microsoft's
+published PBIP, PBIR, and TMDL schemas and validated structurally, but it has not
+been opened in Power BI Desktop by this repository's automation. Converting it to
+`.pbix` is one manual **Save As** in Desktop; see section 4.1 of
+`docs/partner-center-submission.md`.
 
 The package has no privileges, network access, external assets, or unsafe DOM
 APIs. Microsoft certification and validation in a real Power BI host are not

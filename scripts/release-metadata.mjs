@@ -1,14 +1,22 @@
 import { createHash } from "node:crypto";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
+import { hasPngSignature, readPngHeader } from "./png-utils.mjs";
 
-const PNG_SIGNATURE = [137, 80, 78, 71, 13, 10, 26, 10];
+const LOGO_SIZE = 300;
+const ICON_SIZE = 20;
+const SCREENSHOT_WIDTH = 1366;
+const SCREENSHOT_HEIGHT = 768;
+const MAX_SCREENSHOT_BYTES = 1024 * 1024;
+const PRIVACY_POLICY_URL = "https://atlyn.io/legal/privacy";
+const TERMS_URL = "https://atlyn.io/legal/terms";
 
 const root = process.cwd();
 const packageJsonPath = path.join(root, "package.json");
 const pbivizPath = path.join(root, "pbiviz.json");
 const logoPath = path.join(root, "assets", "logo-300x300.png");
+const screenshotDirectory = path.join(root, "assets", "screenshots");
 
 const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8"));
 const pbiviz = JSON.parse(readFileSync(pbivizPath, "utf8"));
@@ -26,18 +34,25 @@ const ensure = (condition, message) => {
 
 const hash = (buffer) => createHash("sha256").update(buffer).digest("hex");
 
-const parsePng300 = (filePath) => {
+const parsePng = (filePath, expectedWidth, expectedHeight, maximumBytes) => {
   const buffer = readFileSync(filePath);
-  ensure(buffer.length >= 24, `PNG is unexpectedly short: ${filePath}`);
+  ensure(hasPngSignature(buffer), `PNG signature is invalid: ${filePath}`);
+  const { width, height } = readPngHeader(buffer);
   ensure(
-    PNG_SIGNATURE.every((value, index) => buffer[index] === value),
-    `PNG signature is invalid: ${filePath}`,
+    width === expectedWidth && height === expectedHeight,
+    `Expected ${expectedWidth}x${expectedHeight} PNG, got ${width}x${height}: ${filePath}`,
   );
-  ensure(buffer.subarray(12, 16).toString("ascii") === "IHDR", `PNG is missing IHDR: ${filePath}`);
-  const width = buffer.readUInt32BE(16);
-  const height = buffer.readUInt32BE(20);
-  ensure(width === 300 && height === 300, `Expected 300x300 PNG, got ${width}x${height}: ${filePath}`);
-  return { width, height, bytes: buffer.length, sha256: hash(buffer) };
+  ensure(
+    maximumBytes === undefined || buffer.length <= maximumBytes,
+    `${filePath} is ${buffer.length} bytes, over the ${maximumBytes} byte limit.`,
+  );
+  return {
+    path: path.relative(root, filePath).replaceAll("\\", "/"),
+    width,
+    height,
+    bytes: buffer.length,
+    sha256: hash(buffer),
+  };
 };
 
 const readJson = (filePath) => JSON.parse(readFileSync(filePath, "utf8"));
@@ -68,12 +83,26 @@ ensure(npmResult.status === 0, `Unable to read npm version: ${npmResult.stderr |
 
 const distManifest = readJson(distManifestPath);
 const iconPath = path.join(root, pbiviz.assets.icon);
-const iconBuffer = readFileSync(iconPath);
-const logo = parsePng300(logoPath);
+const icon = parsePng(iconPath, ICON_SIZE, ICON_SIZE);
+const logo = parsePng(logoPath, LOGO_SIZE, LOGO_SIZE);
+const screenshots = readdirSync(screenshotDirectory, { withFileTypes: true })
+  .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".png"))
+  .map((entry) => entry.name)
+  .sort()
+  .map((name) => parsePng(
+    path.join(screenshotDirectory, name),
+    SCREENSHOT_WIDTH,
+    SCREENSHOT_HEIGHT,
+    MAX_SCREENSHOT_BYTES,
+  ));
+ensure(
+  screenshots.length >= 1 && screenshots.length <= 5,
+  `AppSource accepts 1-5 listing screenshots; found ${screenshots.length}.`,
+);
 const artifact = readFileSync(artifactPath);
 
 const metadata = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   sourceCommit: gitResult.stdout.trim(),
   visual: {
     guid: pbiviz.visual.guid,
@@ -86,19 +115,23 @@ const metadata = {
     sha256: hash(artifact),
     bundleVersion: distManifest.version,
   },
+  submission: {
+    appSourceListing: "Free",
+    monetization: "Atlyn storefront subscription at https://atlyn.io (separate from AppSource)",
+    supportUrl: pbiviz.visual.supportUrl,
+    privacyPolicyUrl: PRIVACY_POLICY_URL,
+    termsUrl: TERMS_URL,
+    authorName: pbiviz.author.name,
+    authorEmail: pbiviz.author.email,
+    eula: "EULA.md",
+    dossier: "docs/partner-center-submission.md",
+    sampleDataset: "assets/sample-data/atlyn-distribution-sample.csv",
+    sampleReportProject: "samples/AtlynSample.pbip",
+  },
   assets: {
-    icon: {
-      path: pbiviz.assets.icon,
-      bytes: iconBuffer.length,
-      sha256: hash(iconBuffer),
-    },
-    partnerCenterLogo300: {
-      path: path.relative(root, logoPath).replaceAll("\\", "/"),
-      width: logo.width,
-      height: logo.height,
-      bytes: logo.bytes,
-      sha256: logo.sha256,
-    },
+    visualIcon20: icon,
+    partnerCenterLogo300: logo,
+    listingScreenshots: screenshots,
   },
   toolchain: {
     node: process.version,

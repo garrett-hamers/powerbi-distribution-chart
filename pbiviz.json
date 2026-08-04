@@ -5,8 +5,8 @@
     "guid": "atlynDistributionA1B2C3D4E5F6G7H8I9J0",
     "visualClassName": "Visual",
     "version": "1.0.0.0",
-    "description": "A truthful grouped distribution box plot with Type 7 quartiles and Tukey whiskers.",
-    "supportUrl": "https://github.com/garrett-hamers/powerbi-distribution-chart/issues"
+    "description": "Compare grouped distributions at a glance. Atlyn Distribution renders raw observations as box plots with Hyndman-Fan Type 7 quartiles, Tukey 1.5xIQR whiskers, mean markers, and genuine outliers, plus transparent row-count diagnostics that never overstate data completeness.",
+    "supportUrl": "https://atlyn.io/contact"
   },
   "apiVersion": "5.11.0",
   "externalJS": null,
@@ -14,9 +14,9 @@
   "capabilities": "capabilities.json",
   "author": {
     "name": "Atlyn",
-    "email": "garrett-hamers@users.noreply.github.com"
+    "email": "atlyn.help@gmail.com"
   },
   "assets": {
-    "icon": "assets/icon.svg"
+    "icon": "assets/icon.png"
   }
 }

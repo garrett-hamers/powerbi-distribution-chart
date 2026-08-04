@@ -17,6 +17,7 @@
     "release:metadata": "node scripts/release-metadata.mjs",
     "sample-data": "node scripts/write-sample-dataset.mjs",
     "sample-report": "node scripts/build-sample-report.mjs",
+    "icon": "node scripts/build-icon.mjs",
     "screenshots": "node scripts/capture-screenshots.mjs",
     "audit:submission": "node scripts/audit-submission-assets.mjs",
     "certification-audit": "npm run package:certification && npm run package && npm run audit:submission",

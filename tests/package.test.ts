@@ -87,6 +87,7 @@ describe("certification-first package contract", () => {
     expect(packageJson.scripts.screenshots).toBe("node scripts/capture-screenshots.mjs");
     expect(packageJson.scripts["sample-data"]).toBe("node scripts/write-sample-dataset.mjs");
     expect(packageJson.scripts["sample-report"]).toBe("node scripts/build-sample-report.mjs");
+    expect(packageJson.scripts.icon).toBe("node scripts/build-icon.mjs");
     expect(packageJson.scripts.package).toBe("node scripts/package.mjs");
     expect(packageJson.scripts["package:reproducible"]).toBe("node scripts/verify-reproducible-package.mjs");
     expect(packageJson.scripts["release:metadata"]).toBe("node scripts/release-metadata.mjs");
@@ -116,6 +117,22 @@ describe("certification-first package contract", () => {
     expect(fs.existsSync(path.join(root, "src", "visual.ts"))).toBe(true);
     expect(fs.existsSync(path.join(root, "src", "analytics.ts"))).toBe(true);
     expect(fs.existsSync(path.join(root, "src", "dataView.ts"))).toBe(true);
+  });
+
+  test("ships a 20x20 PNG visual icon referenced by pbiviz.json", () => {
+    const pbiviz = JSON.parse(fs.readFileSync(path.join(root, "pbiviz.json"), "utf8")) as {
+      assets: { icon: string };
+    };
+    // Microsoft documents the visual icon as a PNG at exactly 20x20. powerbi-visuals-tools
+    // does not enforce it and hard-codes assets/icon.png into the packaged manifest
+    // regardless of the source extension, so the contract is pinned here.
+    expect(pbiviz.assets.icon).toBe("assets/icon.png");
+
+    const icon = fs.readFileSync(path.join(root, "assets", "icon.png"));
+    expect(icon.subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+    expect(icon.subarray(12, 16).toString("ascii")).toBe("IHDR");
+    expect(icon.readUInt32BE(16)).toBe(20);
+    expect(icon.readUInt32BE(20)).toBe(20);
   });
 
   test("ships a Partner Center-ready 300x300 PNG logo asset", () => {

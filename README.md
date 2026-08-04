@@ -61,13 +61,22 @@ remaining manual steps the owner has to perform. `EULA.md` is the listing EULA.
 
 `npm run audit:submission` is the deterministic gate for those assets. It checks
 the required `pbiviz.json` fields (name, display name, frozen GUID, four-part
-version, description, https support URL, author name and email), that the logo is
-a real 300x300 PNG, that `assets/screenshots` holds one to five PNGs at exactly
-1366x768 and at most 1024 KB each, that the EULA and dossier are present and
-cross-linked, and that `assets/sample-data/atlyn-distribution-sample.csv` still
+version, description, https support URL, author name and email), and asserts all
+three image contracts separately: `assets/icon.png` is a real PNG at exactly
+20x20, `assets/logo-300x300.png` at exactly 300x300, and `assets/screenshots`
+holds one to five PNGs at exactly 1366x768 and at most 1024 KB each. It also
+checks that the EULA and dossier are present and cross-linked, and that
+`assets/sample-data/atlyn-distribution-sample.csv` still
 matches its deterministic generator. It also reports whether the sample `.pbix`
 is present; Microsoft requires one, but only Power BI Desktop can author it, so
 that step stays with the owner and is never faked here.
+
+`npm run icon` re-renders `assets/icon.png` from `assets/icon.svg` at exactly
+20x20 in a headless browser. Microsoft documents the packaged visual icon as a PNG
+at 20x20, but `powerbi-visuals-tools` does not enforce it: it embeds whatever
+`assets.icon` points at and hard-codes `assets/icon.png` into the packaged
+manifest either way, so an SVG source silently produces a manifest/payload
+mismatch. The SVG stays the editable source; the PNG is what ships.
 
 `npm run screenshots` regenerates `assets/screenshots` from the *packaged*
 visual. It runs `npm run package`, extracts the bundled JavaScript from the

@@ -3,8 +3,8 @@
 *.png binary
 *.pbiviz binary
 *.pbix binary
-# Text assets that get read into the PBIVIZ package must be byte-identical on every
-# platform, otherwise the built package is only reproducible per operating system.
+# Text assets that feed the PBIVIZ package or the icon render must be byte-identical on
+# every platform, otherwise the built package is only reproducible per operating system.
 *.svg text eol=lf
 *.resjson text eol=lf
 assets/sample-data/*.csv text eol=crlf

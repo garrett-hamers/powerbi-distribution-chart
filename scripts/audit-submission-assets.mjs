@@ -15,6 +15,7 @@ import { SAMPLE_SLUG, buildSampleReportFiles } from "./build-sample-report.mjs";
  */
 
 const LOGO_SIZE = 300;
+const ICON_SIZE = 20;
 const SCREENSHOT_WIDTH = 1366;
 const SCREENSHOT_HEIGHT = 768;
 const MAX_SCREENSHOT_BYTES = 1024 * 1024;
@@ -139,6 +140,26 @@ await check("privacy policy URL is https", () => {
   const dossier = readFileSync(path.join(root, "docs", "partner-center-submission.md"), "utf8");
   ensure(dossier.includes(PRIVACY_POLICY_URL), "The submission dossier does not record the privacy policy URL.");
   return PRIVACY_POLICY_URL;
+});
+
+await check(`visual icon is a ${ICON_SIZE}x${ICON_SIZE} PNG`, () => {
+  // Microsoft documents the visual icon as "a PNG file with dimensions 20 pixels by 20
+  // pixels". powerbi-visuals-tools does not enforce it and hard-codes assets/icon.png into
+  // the packaged manifest whatever the source extension is, so this is enforced here.
+  ensure(
+    visual.name !== undefined && pbiviz.assets?.icon === "assets/icon.png",
+    `pbiviz.json assets.icon is "${pbiviz.assets?.icon}"; it must be "assets/icon.png".`,
+  );
+  const iconPath = path.join(root, "assets", "icon.png");
+  const bytes = requireNonEmptyFile(iconPath, 64);
+  const buffer = readFileSync(iconPath);
+  ensure(hasPngSignature(buffer), `${relative(iconPath)} is not a PNG.`);
+  const header = readPngHeader(buffer);
+  ensure(
+    header.width === ICON_SIZE && header.height === ICON_SIZE,
+    `${relative(iconPath)} is ${header.width}x${header.height}, expected ${ICON_SIZE}x${ICON_SIZE}.`,
+  );
+  return `${header.width}x${header.height}, ${bytes} bytes`;
 });
 
 await check(`Partner Center logo is a ${LOGO_SIZE}x${LOGO_SIZE} PNG`, () => {

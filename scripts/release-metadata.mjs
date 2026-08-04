@@ -5,6 +5,7 @@ import path from "node:path";
 import { hasPngSignature, readPngHeader } from "./png-utils.mjs";
 
 const LOGO_SIZE = 300;
+const ICON_SIZE = 20;
 const SCREENSHOT_WIDTH = 1366;
 const SCREENSHOT_HEIGHT = 768;
 const MAX_SCREENSHOT_BYTES = 1024 * 1024;
@@ -82,7 +83,7 @@ ensure(npmResult.status === 0, `Unable to read npm version: ${npmResult.stderr |
 
 const distManifest = readJson(distManifestPath);
 const iconPath = path.join(root, pbiviz.assets.icon);
-const iconBuffer = readFileSync(iconPath);
+const icon = parsePng(iconPath, ICON_SIZE, ICON_SIZE);
 const logo = parsePng(logoPath, LOGO_SIZE, LOGO_SIZE);
 const screenshots = readdirSync(screenshotDirectory, { withFileTypes: true })
   .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".png"))
@@ -128,11 +129,7 @@ const metadata = {
     sampleReportProject: "samples/AtlynSample.pbip",
   },
   assets: {
-    icon: {
-      path: pbiviz.assets.icon,
-      bytes: iconBuffer.length,
-      sha256: hash(iconBuffer),
-    },
+    visualIcon20: icon,
     partnerCenterLogo300: logo,
     listingScreenshots: screenshots,
   },

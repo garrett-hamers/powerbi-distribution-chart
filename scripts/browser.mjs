@@ -235,7 +235,7 @@ async function openTarget(httpBase, url) {
  * Renders `url` at exactly `width` x `height` and returns the PNG bytes plus whatever
  * `readyExpression` evaluated to, so callers can prove the page really rendered.
  */
-export async function capturePage(browser, { url, width, height, readyExpression, readyTimeoutMs = 30000 }) {
+export async function capturePage(browser, { url, width, height, readyExpression, readyTimeoutMs = 30000, transparent = false }) {
   const target = await openTarget(browser.httpBase, url);
   const page = await connect(target.webSocketDebuggerUrl);
 
@@ -250,6 +250,11 @@ export async function capturePage(browser, { url, width, height, readyExpression
       screenWidth: width,
       screenHeight: height,
     });
+    if (transparent) {
+      await page.send("Emulation.setDefaultBackgroundColorOverride", {
+        color: { r: 0, g: 0, b: 0, a: 0 },
+      });
+    }
 
     let state;
     const deadline = Date.now() + readyTimeoutMs;

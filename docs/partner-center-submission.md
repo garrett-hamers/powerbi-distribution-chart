@@ -45,6 +45,7 @@ regenerate it between recording the manifest and uploading.
 
 | Partner Center field | Requirement | Value in this repository |
 | --- | --- | --- |
+| Visual icon (in the package) | PNG, exactly 20x20 | `assets/icon.png`, referenced by `pbiviz.json` -> `assets.icon` |
 | Logo | PNG, exactly 300x300 | `assets/logo-300x300.png` |
 | Screenshots | 1-5 PNGs, exactly 1366x768, each <= 1024 KB | `assets/screenshots/` (3 files, see below) |
 | Support URL | https:// | <https://atlyn.io/contact> |
@@ -52,6 +53,31 @@ regenerate it between recording the manifest and uploading.
 | Terms of use | - | <https://atlyn.io/legal/terms> |
 | EULA | A file, or Microsoft's standard contract | `EULA.md` |
 | Sample report | `.pbix`, fully offline | Offline project committed at `samples/AtlynSample.pbip`; one manual Desktop **Save As** produces the `.pbix` - see section 4.1 |
+
+### Visual icon
+
+Microsoft's [visual project structure](https://learn.microsoft.com/en-us/power-bi/developer/visuals/visual-project-structure)
+page states the icon "must be a **PNG** file with dimensions 20 pixels by 20
+pixels". This is the icon shown in the Power BI visualizations pane, and it is
+separate from the 300x300 Partner Center listing logo.
+
+`powerbi-visuals-tools` **does not enforce this**. It base64-encodes whatever
+`assets.icon` points at, maps a `.svg` extension to an `image/svg+xml` data URI,
+and then hard-codes `assets: { icon: "assets/icon.png" }` into the packaged
+manifest regardless of the source extension
+(`powerbi-visuals-webpack-plugin/src/index.js`, lines 26-33 and 428). Pointing
+`assets.icon` at an SVG therefore produces a package whose manifest claims PNG
+while the payload is an SVG data URI, with no warning and no dimension check.
+
+This repository does not rely on that undocumented tolerance:
+`assets/icon.svg` remains the editable source, `npm run icon` renders it to
+`assets/icon.png` at exactly 20x20 in a headless browser, and `pbiviz.json`
+points `assets.icon` at the PNG. The packaged `iconBase64` is then a real
+`data:image/png;base64,...` payload that matches the manifest.
+
+`npm run audit:submission` asserts all three image contracts separately:
+`assets/icon.png` exactly 20x20, `assets/logo-300x300.png` exactly 300x300, and
+each screenshot exactly 1366x768 and at most 1024 KB.
 
 ### Licensing and pricing - FREE listing (owner-confirmed)
 
@@ -220,6 +246,7 @@ npm run package
 npm run package:reproducible
 npm run release:metadata
 npm run sample-report         # regenerates samples/ from the built .pbiviz
+npm run icon                  # re-renders assets/icon.png at 20x20 from assets/icon.svg
 npm run audit:submission      # deterministic AppSource asset gate
 npm run certification-audit   # pbiviz certification audit + audit:submission
 npm audit --audit-level=high

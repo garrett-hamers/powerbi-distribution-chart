@@ -37,9 +37,21 @@ still has to do by hand.
 | Build command | `npm run package` |
 | Reproducibility gate | `npm run package:reproducible` (packages twice, requires identical filename, byte count, and SHA-256) |
 | Release manifest | `npm run release:metadata` -> `dist/release-metadata.json` |
+| **Canonical binary** | the `pbiviz-<commit-sha>` artifact published by the CI run for the submitted commit |
 
-Upload the exact `.pbiviz` recorded in `dist/release-metadata.json`. Do not
-regenerate it between recording the manifest and uploading.
+**Upload CI's binary, not a local build.** Every CI run publishes the built
+`.pbiviz` as a downloadable artifact named `pbiviz-<commit-sha>`, and prints its
+filename, byte count, and SHA-256 to the run log and the run summary. Taking the
+binary from the run that verified the commit removes any question about which
+build was submitted. A local `npm run package` on this repository has matched CI
+byte-for-byte - the packaged text assets are pinned to LF in `.gitattributes`
+precisely so that holds - but the artifact is still the unambiguous source, and
+the checksum is recoverable from the run without downloading anything.
+
+GitHub wraps downloaded artifacts in a ZIP. The recorded SHA-256 is of the
+`.pbiviz` **inside** it, not of the ZIP.
+
+Do not regenerate the package between recording the checksum and uploading.
 
 > **v1.0.1.0 supersedes the v1.0.0.0 artifact currently in Blob storage.**
 >
@@ -248,8 +260,10 @@ Steps:
 
 1. Confirm the Partner Center publisher account, publisher display name, and the
    tax and payout profile are complete.
-2. Create the Power BI visual offer and upload the exact `.pbiviz` recorded in
-   `dist/release-metadata.json`.
+2. Create the Power BI visual offer and upload the `.pbiviz` from the
+   `pbiviz-<commit-sha>` CI artifact for the submitted commit - see the package
+   artifact table in section 1. Check its SHA-256 against the one printed in that
+   run's summary before uploading.
 3. **Leave the offer FREE.** Do not set a price, a trial, or any transactability
    option - see the licensing subsection in section 2. Monetization is handled
    entirely by the Atlyn Stripe subscription at <https://atlyn.io> and is outside

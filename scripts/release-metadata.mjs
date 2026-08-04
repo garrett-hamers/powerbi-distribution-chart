@@ -125,7 +125,7 @@ const metadata = {
     eula: "EULA.md",
     dossier: "docs/partner-center-submission.md",
     sampleDataset: "assets/sample-data/atlyn-distribution-sample.csv",
-    sampleReportProject: "samples/atlyn-distribution-sample.pbip",
+    sampleReportProject: "samples/AtlynSample.pbip",
   },
   assets: {
     icon: {

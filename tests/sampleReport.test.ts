@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const root = path.resolve(__dirname, "..");
-const SAMPLE_SLUG = "atlyn-distribution-sample";
+const SAMPLE_SLUG = "AtlynSample";
 const SAMPLE_ROOT = path.join(root, "samples");
 const REPORT_ROOT = path.join(SAMPLE_ROOT, `${SAMPLE_SLUG}.Report`);
 const MODEL_ROOT = path.join(SAMPLE_ROOT, `${SAMPLE_SLUG}.SemanticModel`);
@@ -126,11 +126,9 @@ describe("offline sample report project", () => {
     expect(resource.content.js.length).toBeGreaterThan(50000);
   });
 
-  test("loads its data from inline literals with no external data source", () => {
-    const tmdl = fs.readFileSync(
-      path.join(MODEL_ROOT, "definition", "tables", "Measurements.tmdl"),
-      "utf8",
-    );
+  test("loads its data from a DAX calculated table with no data source at all", () => {
+    const definitionRoot = path.join(MODEL_ROOT, "definition");
+    const tmdl = fs.readFileSync(path.join(definitionRoot, "tables", "Measurements.tmdl"), "utf8");
 
     [
       "Sql.Database",
@@ -145,11 +143,31 @@ describe("offline sample report project", () => {
     ].forEach((token) => expect(tmdl).not.toContain(token));
     expect(tmdl).not.toMatch(/\bhttps?:\/\//);
 
+    // A calculated table has no data source object, unlike a Power Query partition.
+    expect(tmdl).toContain("= calculated");
     expect(tmdl).toContain("mode: import");
-    expect(tmdl).toContain("#table(");
-    expect(tmdl).toContain("type table [Category = text, Sample = text, Value = number]");
+    expect(tmdl).toContain("DATATABLE(");
+    expect(tmdl).toContain('"Category", STRING');
+    expect(tmdl).toContain('"Value", DOUBLE');
     // Don't summarize, so the visual receives raw observations.
     expect(tmdl).toContain("summarizeBy: none");
+
+    const modelFiles = fs.readdirSync(definitionRoot, { withFileTypes: true })
+      .filter((entry) => entry.isFile())
+      .map((entry) => entry.name)
+      .sort();
+    expect(modelFiles).toEqual(["database.tmdl", "model.tmdl"]);
+
+    const everyTmdl = [
+      path.join(definitionRoot, "database.tmdl"),
+      path.join(definitionRoot, "model.tmdl"),
+      path.join(definitionRoot, "tables", "Measurements.tmdl"),
+    ].map((file) => fs.readFileSync(file, "utf8")).join("\n");
+
+    // No Power Query partition, no shared expressions, no data source declarations.
+    expect(everyTmdl).not.toMatch(/^\s*partition .+ = m$/m);
+    expect(everyTmdl).not.toMatch(/^\s*expression /m);
+    expect(everyTmdl).not.toMatch(/^\s*dataSource /m);
   });
 
   test("carries exactly the rows of the committed sample dataset", () => {

@@ -321,10 +321,8 @@ await check("sample report binds the frozen GUID with declared roles and no exte
     "report.json is missing the CustomVisual resource package that embeds the visual.",
   );
 
-  const tmdl = readFileSync(
-    path.join(root, "samples", `${SAMPLE_SLUG}.SemanticModel`, "definition", "tables", "Measurements.tmdl"),
-    "utf8",
-  );
+  const tmdlRoot = path.join(root, "samples", `${SAMPLE_SLUG}.SemanticModel`, "definition");
+  const tmdl = readFileSync(path.join(tmdlRoot, "tables", "Measurements.tmdl"), "utf8");
   EXTERNAL_SOURCE_TOKENS.forEach((token) => ensure(
     !tmdl.includes(token),
     `Sample report semantic model references an external data source (${token}).`,
@@ -333,7 +331,23 @@ await check("sample report binds the frozen GUID with declared roles and no exte
     !EXTERNAL_URL_PATTERN.test(tmdl),
     "Sample report semantic model contains a URL, so it is not fully offline.",
   );
-  ensure(tmdl.includes("#table("), "Sample report semantic model has no inline data literal.");
+  ensure(
+    tmdl.includes("= calculated") && tmdl.includes("DATATABLE("),
+    "Sample report semantic model is not a DAX calculated table.",
+  );
+
+  const everyTmdl = readdirSync(tmdlRoot, { withFileTypes: true, recursive: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".tmdl"))
+    .map((entry) => readFileSync(path.join(entry.parentPath ?? entry.path, entry.name), "utf8"))
+    .join("\n");
+  ensure(
+    !/^\s*partition .+ = m$/m.test(everyTmdl),
+    "Sample report semantic model still has a Power Query partition, which is a refreshable data source.",
+  );
+  ensure(
+    !/^\s*expression /m.test(everyTmdl) && !/^\s*dataSource /m.test(everyTmdl),
+    "Sample report semantic model declares a shared expression or data source.",
+  );
 
   return `${stateKeys.join(", ")} bound to ${FROZEN_GUID}`;
 });

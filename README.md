@@ -84,20 +84,26 @@ screenshots can never drift apart.
 ## Offline sample report
 
 Microsoft requires a sample report that works fully offline. `samples/` holds that
-report as a complete Power BI Desktop project:
-`atlyn-distribution-sample.pbip`, a PBIR report definition, and a TMDL semantic
-model whose single partition is an inline Power Query `#table(...)` literal of all
-200 rows. The visual is embedded as a private custom visual under
+report as a complete Power BI Desktop project: `AtlynSample.pbip`, a PBIR report
+definition, and a TMDL semantic model that holds all 200 rows in a **DAX
+calculated table** (`DATATABLE(...)`). A calculated table has no data source
+object at all - no Power Query partition, no shared expression, no
+`dataSources.tmdl` - so there is nothing to authenticate against and nothing to
+refresh. The visual is embedded as a private custom visual under
 `CustomVisuals/`, declared through a `CustomVisual` resource package rather than
 `publicCustomVisuals`, so nothing is resolved from the AppSource store at render
 time.
+
+The project uses only the native, publicly documented PBIP folder format; no
+third-party packaging tool is involved.
 
 `npm run sample-report` regenerates the whole project deterministically from the
 built `.pbiviz`, and `npm run audit:submission` regenerates it in memory and fails
 if the committed tree has drifted. `tests/sampleReport.test.ts` additionally
 asserts that the visual binds the frozen GUID, that every `queryState` key is a
 declared `capabilities.json` data role, that no projection is aggregated, and that
-the semantic model references no external data source.
+the semantic model contains no Power Query partition, shared expression, or data
+source declaration.
 
 The embedded bundle is always the plain `npm run package` output, which is the
 artifact recorded in `dist/release-metadata.json` and uploaded to Partner Center.

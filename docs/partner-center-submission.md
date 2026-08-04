@@ -51,7 +51,7 @@ regenerate it between recording the manifest and uploading.
 | Privacy policy URL | https:// | <https://atlyn.io/legal/privacy> |
 | Terms of use | - | <https://atlyn.io/legal/terms> |
 | EULA | A file, or Microsoft's standard contract | `EULA.md` |
-| Sample report | `.pbix`, fully offline | Offline project committed at `samples/atlyn-distribution-sample.pbip`; one manual Desktop **Save As** produces the `.pbix` - see section 4.1 |
+| Sample report | `.pbix`, fully offline | Offline project committed at `samples/AtlynSample.pbip`; one manual Desktop **Save As** produces the `.pbix` - see section 4.1 |
 
 ### Licensing and pricing - FREE listing (owner-confirmed)
 
@@ -122,33 +122,35 @@ These cannot be automated from this repository.
 
 Microsoft requires a sample report that works fully offline with no external
 connections. This repository ships that report as a complete Power BI Desktop
-**project** at `samples/atlyn-distribution-sample.pbip`, generated deterministically
+**project** at `samples/AtlynSample.pbip`, generated deterministically
 by `npm run sample-report` and validated by `npm run audit:submission` and the Jest
-suite.
+suite. It uses only the native, publicly documented PBIP folder format - no
+third-party tooling is involved, and in particular nothing here depends on
+`pbi-tools`, whose `compile` command is incompatible with current Power BI Desktop
+packaging APIs.
 
 A `.pbix` cannot be produced headlessly: its `DataModel` part is a binary Analysis
-Services backup image. `pbi-tools compile --help` states that *"the PBIX output is
-supported only for report-only projects ('thin' reports), and PBIT for projects
-containing a data model."* So the project is committed in the documented text
-formats and the owner performs one manual save.
+Services backup image. So the project is committed in the documented text formats
+and the owner performs one manual save.
 
 What is already in the project:
 
 - **Report** in the documented PBIR format
-  (`atlyn-distribution-sample.Report/definition/**.json`), with the visual bound to
+  (`AtlynSample.Report/definition/**.json`), with the visual bound to
   `visualType: atlynDistributionA1B2C3D4E5F6G7H8I9J0` and `Category`, `Sample`, and
   `Value` each projected as a raw **Column** - the PBIR equivalent of *Don't
   summarize*, which this visual requires.
 - **Semantic model** in TMDL
-  (`atlyn-distribution-sample.SemanticModel/definition/**.tmdl`), whose single
-  partition is an inline Power Query `#table(...)` literal holding all 200 rows.
-  There is no SQL, Web, File, Csv, Excel, OData, Folder, or SharePoint source, so
-  refresh needs no credentials and no network.
+  (`AtlynSample.SemanticModel/definition/**.tmdl`) holding all 200 rows in a
+  **DAX calculated table** (`partition Measurements = calculated` with a
+  `DATATABLE(...)` source). A calculated table has no data source object at all -
+  no Power Query partition, no shared expression, no `dataSources.tmdl` - so there
+  is nothing to authenticate against and nothing to refresh.
 - **The visual embedded as a private custom visual** under
-  `atlyn-distribution-sample.Report/CustomVisuals/`, declared through a
-  `CustomVisual` entry in `resourcePackages`. `publicCustomVisuals` is deliberately
-  not used, because it resolves the visual from the AppSource store and would make
-  the report non-offline.
+  `AtlynSample.Report/CustomVisuals/`, declared through a `CustomVisual` entry in
+  `resourcePackages`. `publicCustomVisuals` is deliberately not used, because it
+  resolves the visual from the AppSource store and would make the report
+  non-offline.
 
 Steps:
 
@@ -159,21 +161,25 @@ Steps:
 2. Run `npm run package` and then `npm run sample-report` so the embedded visual
    matches the exact build you are submitting. (Both are already committed; re-run
    them only after a version bump.)
-3. Open `samples/atlyn-distribution-sample.pbip`.
+3. Open `samples/AtlynSample.pbip`.
 4. Confirm the visual renders and the diagnostics line reports 200 received and 200
    rendered rows.
-5. Verify it is genuinely offline: disconnect from the network, choose **Refresh**,
-   and confirm the model reloads and the visual still renders.
-6. **File > Save As** and choose **Power BI files (\*.pbix)**. Save as
-   `samples/atlyn-distribution-sample.pbix` and commit it.
+5. **File > Save As** and choose **Power BI files (\*.pbix)**. Save as
+   `samples/AtlynSample.pbix` and commit it.
    `npm run audit:submission` will then report the sample report as present.
 
 > **Verification status.** The project is generated against Microsoft's published
 > PBIP, PBIR, and TMDL schemas and is checked structurally by
 > `tests/sampleReport.test.ts` and `npm run audit:submission`. It has **not** been
 > opened in Power BI Desktop from this repository's automation, because Desktop is
-> Windows-desktop software and is not available to the build. Step 3 above is
+> Windows-desktop GUI software and is not launched by the build. Step 3 above is
 > therefore also the real-world verification step.
+
+> **Format versions.** `definition.pbir` uses `"version": "4.0"` and
+> `definition.pbism` uses `"version": "4.2"` on purpose. Microsoft documents
+> `"version": "1.0"` as selecting the *legacy* formats - PBIR-Legacy `report.json`
+> for reports and TMSL `model.bim` for semantic models - which this project does
+> not use. `4.0` or above is required for the `definition/` folder layout.
 
 ### 4.2 Partner Center account and listing
 

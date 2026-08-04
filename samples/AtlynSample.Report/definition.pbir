@@ -3,7 +3,7 @@
   "version": "4.0",
   "datasetReference": {
     "byPath": {
-      "path": "../atlyn-distribution-sample.SemanticModel"
+      "path": "../AtlynSample.SemanticModel"
     }
   }
 }

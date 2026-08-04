@@ -19,7 +19,7 @@ import JSZip from "jszip";
  * Schema URLs below are pinned against https://github.com/microsoft/json-schemas.
  */
 
-export const SAMPLE_SLUG = "atlyn-distribution-sample";
+export const SAMPLE_SLUG = "AtlynSample";
 export const SAMPLE_DISPLAY_NAME = "Atlyn Distribution Sample";
 export const SAMPLE_ROOT = "samples";
 export const TABLE_NAME = "Measurements";
@@ -98,63 +98,73 @@ const buildQueryState = () => ({
   Value: columnProjection("Value"),
 });
 
-const escapeM = (value) => String(value).replaceAll('"', '""');
+const escapeDax = (value) => String(value).replaceAll('"', '""');
 
-const buildPowerQuery = (rows) => {
+/**
+ * A DAX calculated table, not a Power Query partition.
+ *
+ * An M partition would still be a query that the model refreshes, even with a literal
+ * `#table(...)` source. A calculated table has no data source object at all, so there is
+ * nothing to prompt for credentials and nothing to refresh - which is what Microsoft's
+ * "works offline with no external connections" requirement actually asks for.
+ */
+const buildDataTable = (rows) => {
   const literals = rows.map((row, index) => {
     const separator = index === rows.length - 1 ? "" : ",";
-    return `            {"${escapeM(row.category)}", "${escapeM(row.sample)}", ${row.value.toFixed(1)}}${separator}`;
+    return `        {"${escapeDax(row.category)}", "${escapeDax(row.sample)}", ${row.value.toFixed(1)}}${separator}`;
   });
   return [
-    "let",
-    "    Source = #table(",
-    "        type table [Category = text, Sample = text, Value = number],",
-    "        {",
+    "DATATABLE(",
+    '    "Category", STRING,',
+    '    "Sample", STRING,',
+    '    "Value", DOUBLE,',
+    "    {",
     ...literals,
-    "        }",
-    "    )",
-    "in",
-    "    Source",
+    "    }",
+    ")",
   ];
 };
 
 const buildTable = (rows) => {
   const indent = "\t\t\t";
   return [
+    `/// Offline sample observations used to demonstrate the visual.`,
     `table ${TABLE_NAME}`,
     `\tlineageTag: ${stableGuid("table:Measurements")}`,
     "",
     "\tcolumn Category",
     "\t\tdataType: string",
+    "\t\tisNameInferred",
     `\t\tlineageTag: ${stableGuid("column:Category")}`,
     "\t\tsummarizeBy: none",
-    "\t\tsourceColumn: Category",
+    "\t\tsourceColumn: [Category]",
     "",
     "\t\tannotation SummarizationSetBy = Automatic",
     "",
     "\tcolumn Sample",
     "\t\tdataType: string",
+    "\t\tisNameInferred",
     `\t\tlineageTag: ${stableGuid("column:Sample")}`,
     "\t\tsummarizeBy: none",
-    "\t\tsourceColumn: Sample",
+    "\t\tsourceColumn: [Sample]",
     "",
     "\t\tannotation SummarizationSetBy = Automatic",
     "",
     "\tcolumn Value",
     "\t\tdataType: double",
     "\t\tformatString: 0.0",
+    "\t\tisNameInferred",
     `\t\tlineageTag: ${stableGuid("column:Value")}`,
+    // Don't summarize: this visual plots raw observations, so it must not receive an aggregate.
     "\t\tsummarizeBy: none",
-    "\t\tsourceColumn: Value",
+    "\t\tsourceColumn: [Value]",
     "",
     "\t\tannotation SummarizationSetBy = User",
     "",
-    `\tpartition ${TABLE_NAME} = m`,
+    `\tpartition ${TABLE_NAME} = calculated`,
     "\t\tmode: import",
     "\t\tsource =",
-    ...buildPowerQuery(rows).map((line) => `${indent}${line}`),
-    "",
-    "\tannotation PBI_ResultType = Table",
+    ...buildDataTable(rows).map((line) => `${indent}${line}`),
     "",
   ].join("\n");
 };
@@ -213,8 +223,8 @@ export async function buildSampleReportFiles(options = {}) {
     settings: { qnaEnabled: false },
   }));
   add(`${SAMPLE_ROOT}/${semanticModelFolder}/definition/database.tmdl`, [
-    "database AtlynDistributionSample",
-    "\tcompatibilityLevel: 1567",
+    "database",
+    "\tcompatibilityLevel: 1550",
     "",
   ].join("\n"));
   add(`${SAMPLE_ROOT}/${semanticModelFolder}/definition/model.tmdl`, [
@@ -222,11 +232,6 @@ export async function buildSampleReportFiles(options = {}) {
     "\tculture: en-US",
     "\tdefaultPowerBIDataSourceVersion: powerBI_V3",
     "\tsourceQueryCulture: en-US",
-    "\tdataAccessOptions",
-    "\t\tlegacyRedirects",
-    "\t\treturnErrorValuesAsNull",
-    "",
-    `annotation PBI_QueryOrder = ["${TABLE_NAME}"]`,
     "",
     `ref table ${TABLE_NAME}`,
     "",
@@ -310,20 +315,22 @@ export async function buildSampleReportFiles(options = {}) {
   add(`${SAMPLE_ROOT}/README.md`, [
     "# Atlyn Distribution offline sample report",
     "",
-    "`atlyn-distribution-sample.pbip` is the Microsoft-required sample report for the",
-    "AppSource submission. It is a Power BI Desktop project stored in the documented",
-    "PBIR (report) and TMDL (semantic model) text formats.",
+    `\`${SAMPLE_SLUG}.pbip\` is the Microsoft-required sample report for the AppSource`,
+    "submission. It is a Power BI Desktop project stored in the documented PBIR",
+    "(report) and TMDL (semantic model) text formats, emitted directly by",
+    "`scripts/build-sample-report.mjs` with no third-party tooling.",
     "",
-    "- The semantic model holds all 200 rows as an inline Power Query `#table(...)`",
-    "  literal, so it refreshes with no data source and no credentials.",
+    "- The semantic model holds all 200 rows in a **DAX calculated table**",
+    "  (`DATATABLE(...)`). There is no Power Query partition and no data source object,",
+    "  so there is nothing to authenticate and nothing to refresh.",
     "- The visual is embedded as a private custom visual under",
     `  \`${reportFolder}/CustomVisuals/\`, so the report renders with no AppSource lookup.`,
     "",
-    "Regenerate with `npm run sample-report` after `npm run package`.",
+    "Regenerate with `npm run package` then `npm run sample-report`.",
     "`npm run audit:submission` fails if the checked-in project drifts from the generator.",
     "",
-    "Producing the `.pbix` itself requires one manual Power BI Desktop save; see",
-    "`docs/partner-center-submission.md` section 4.1.",
+    "Producing the `.pbix` is one manual step: open the `.pbip` in Power BI Desktop and",
+    "**File > Save As** a `.pbix`. See `docs/partner-center-submission.md` section 4.1.",
     "",
   ].join("\n"));
 

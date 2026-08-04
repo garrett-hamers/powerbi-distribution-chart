@@ -81,7 +81,10 @@ describe("certification-first package contract", () => {
     expect(pbiviz.apiVersion).toBe("5.11.0");
     expect(pbiviz.visual.version).toBe("1.0.0.0");
     expect(packageJson.scripts.eslint).toBe("eslint .");
-    expect(packageJson.scripts["certification-audit"]).toBe("npm run package:certification");
+    expect(packageJson.scripts["certification-audit"]).toBe("npm run package:certification && npm run audit:submission");
+    expect(packageJson.scripts["audit:submission"]).toBe("node scripts/audit-submission-assets.mjs");
+    expect(packageJson.scripts.screenshots).toBe("node scripts/capture-screenshots.mjs");
+    expect(packageJson.scripts["sample-data"]).toBe("node scripts/write-sample-dataset.mjs");
     expect(packageJson.scripts.package).toBe("node scripts/package.mjs");
     expect(packageJson.scripts["package:reproducible"]).toBe("node scripts/verify-reproducible-package.mjs");
     expect(packageJson.scripts["release:metadata"]).toBe("node scripts/release-metadata.mjs");
@@ -120,6 +123,67 @@ describe("certification-first package contract", () => {
     expect(logo.subarray(12, 16).toString("ascii")).toBe("IHDR");
     expect(logo.readUInt32BE(16)).toBe(300);
     expect(logo.readUInt32BE(20)).toBe(300);
+  });
+
+  test("declares every AppSource-required pbiviz submission field", () => {
+    const pbiviz = JSON.parse(fs.readFileSync(path.join(root, "pbiviz.json"), "utf8")) as {
+      visual: { name: string; displayName: string; guid: string; version: string; description: string; supportUrl: string };
+      author: { name: string; email: string };
+    };
+
+    expect(pbiviz.visual.name).toBe("atlynDistribution");
+    expect(pbiviz.visual.displayName).toBe("Atlyn Distribution");
+    expect(pbiviz.visual.version).toMatch(/^\d+\.\d+\.\d+\.\d+$/);
+    expect(pbiviz.visual.description.length).toBeGreaterThanOrEqual(40);
+    expect(pbiviz.visual.description.length).toBeLessThanOrEqual(500);
+    expect(pbiviz.visual.supportUrl).toBe("https://atlyn.io/contact");
+    expect(pbiviz.author.name).toBe("Atlyn");
+    expect(pbiviz.author.email).toBe("atlyn.help@gmail.com");
+    expect(pbiviz.author.email).toMatch(/^[^\s@]+@[^\s@]+\.[^\s@]+$/);
+  });
+
+  test("ships 1-5 listing screenshots at exactly 1366x768 and under 1024 KB", () => {
+    const screenshotDirectory = path.join(root, "assets", "screenshots");
+    const entries = fs.readdirSync(screenshotDirectory, { withFileTypes: true })
+      .filter((entry) => entry.isFile())
+      .map((entry) => entry.name)
+      .sort();
+
+    expect(entries.every((name) => name.endsWith(".png"))).toBe(true);
+    expect(entries.length).toBeGreaterThanOrEqual(1);
+    expect(entries.length).toBeLessThanOrEqual(5);
+
+    entries.forEach((name) => {
+      const screenshot = fs.readFileSync(path.join(screenshotDirectory, name));
+      expect(screenshot.subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+      expect(screenshot.subarray(12, 16).toString("ascii")).toBe("IHDR");
+      expect(screenshot.readUInt32BE(16)).toBe(1366);
+      expect(screenshot.readUInt32BE(20)).toBe(768);
+      expect(screenshot.length).toBeLessThanOrEqual(1024 * 1024);
+    });
+  });
+
+  test("ships the EULA, submission dossier, and offline sample dataset", () => {
+    const eula = fs.readFileSync(path.join(root, "EULA.md"), "utf8");
+    expect(eula).toContain("https://atlyn.io/legal/privacy");
+    expect(eula).toContain("https://atlyn.io/contact");
+
+    const dossier = fs.readFileSync(path.join(root, "docs", "partner-center-submission.md"), "utf8");
+    [
+      "atlynDistributionA1B2C3D4E5F6G7H8I9J0",
+      "https://atlyn.io/contact",
+      "https://atlyn.io/legal/privacy",
+      "EULA.md",
+      "assets/logo-300x300.png",
+    ].forEach((token) => expect(dossier).toContain(token));
+
+    const csv = fs.readFileSync(
+      path.join(root, "assets", "sample-data", "atlyn-distribution-sample.csv"),
+      "utf8",
+    ).trim().split(/\r?\n/);
+    expect(csv[0]).toBe("Category,Sample,Value");
+    expect(csv).toHaveLength(201);
+    expect(csv[1]).toMatch(/^Line A,Run 01,-?\d+\.\d$/);
   });
 
   test("keeps localization resources aligned with capabilities display-name keys", () => {

@@ -31,6 +31,7 @@ npm run package
 npm run package:reproducible
 npm run release:metadata
 npm audit
+npm run audit:submission
 npm run certification-audit
 ```
 
@@ -47,7 +48,35 @@ record the final main commit, package filename, SHA-256, Node/npm versions, and
 instead of regenerating it.
 `npm run release:metadata` writes that deterministic manifest to
 `dist/release-metadata.json` and validates the checked-in Partner Center logo at
-`assets/logo-300x300.png`.
+`assets/logo-300x300.png` and the listing screenshots in `assets/screenshots`.
+
+## AppSource submission assets
+
+`docs/partner-center-submission.md` is the submission dossier: it records every
+Partner Center field with its final value, the compliance statements, and the
+remaining manual steps the owner has to perform. `EULA.md` is the listing EULA.
+
+`npm run audit:submission` is the deterministic gate for those assets. It checks
+the required `pbiviz.json` fields (name, display name, frozen GUID, four-part
+version, description, https support URL, author name and email), that the logo is
+a real 300x300 PNG, that `assets/screenshots` holds one to five PNGs at exactly
+1366x768 and at most 1024 KB each, that the EULA and dossier are present and
+cross-linked, and that `assets/sample-data/atlyn-distribution-sample.csv` still
+matches its deterministic generator. It also reports whether the sample `.pbix`
+is present; Microsoft requires one, but only Power BI Desktop can author it, so
+that step stays with the owner and is never faked here.
+
+`npm run screenshots` regenerates `assets/screenshots` from the *packaged*
+visual. It runs `npm run package`, extracts the bundled JavaScript from the
+`.pbiviz`, serves `tools/screenshots` on loopback, and captures each scene over
+the Chrome DevTools Protocol at exactly 1366x768. It needs a locally installed
+Chrome, Edge, or Chromium (or `CHROME_PATH`) and Node 22 or newer, and it fails
+loudly rather than producing a placeholder if no browser is available. CI does
+not run it; CI validates the committed PNGs instead.
+
+`npm run sample-data` rewrites the offline sample CSV from the same deterministic
+module the screenshot harness uses, so the committed dataset and the committed
+screenshots can never drift apart.
 
 The package has no privileges, network access, external assets, or unsafe DOM
 APIs. Microsoft certification and validation in a real Power BI host are not

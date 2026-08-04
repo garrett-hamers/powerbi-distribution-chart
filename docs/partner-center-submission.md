@@ -1,0 +1,168 @@
+# Atlyn Distribution - Partner Center submission dossier
+
+This document is the single source of truth for the Microsoft AppSource /
+Partner Center listing of the **Atlyn Distribution** Power BI custom visual. Every
+field below records the concrete final value that ships from this repository.
+
+Microsoft's published requirements for Power BI visual submissions are documented at
+<https://learn.microsoft.com/en-us/power-bi/developer/visuals/office-store>.
+
+Nothing in this document asserts that the visual has been certified, validated, or
+accepted by Microsoft. It records what this repository provides and what the owner
+still has to do by hand.
+
+## 1. Package metadata (`pbiviz.json`)
+
+| Partner Center field | Value | Source |
+| --- | --- | --- |
+| Visual name | `atlynDistribution` | `pbiviz.json` -> `visual.name` |
+| Display name | `Atlyn Distribution` | `pbiviz.json` -> `visual.displayName` |
+| GUID (**frozen**) | `atlynDistributionA1B2C3D4E5F6G7H8I9J0` | `pbiviz.json` -> `visual.guid` |
+| Version (four-part) | `1.0.0.0` | `pbiviz.json` -> `visual.version` |
+| API version | `5.11.0` | `pbiviz.json` -> `apiVersion` |
+| Description | "Compare grouped distributions at a glance. Atlyn Distribution renders raw observations as box plots with Hyndman-Fan Type 7 quartiles, Tukey 1.5xIQR whiskers, mean markers, and genuine outliers, plus transparent row-count diagnostics that never overstate data completeness." | `pbiviz.json` -> `visual.description` |
+| Support URL | <https://atlyn.io/contact> | `pbiviz.json` -> `visual.supportUrl` |
+| Author name | `Atlyn` | `pbiviz.json` -> `author.name` |
+| Author email | `atlyn.help@gmail.com` | `pbiviz.json` -> `author.email` |
+
+> **Do not change the GUID.** It is already recorded in the storefront release
+> manifest and in published download paths. `scripts/audit-submission-assets.mjs`
+> and `tests/package.test.ts` both pin it.
+
+### Package artifact
+
+| Field | Value |
+| --- | --- |
+| Artifact filename | `atlynDistributionA1B2C3D4E5F6G7H8I9J0.1.0.0.0.pbiviz` |
+| Build command | `npm run package` |
+| Reproducibility gate | `npm run package:reproducible` (packages twice, requires identical filename, byte count, and SHA-256) |
+| Release manifest | `npm run release:metadata` -> `dist/release-metadata.json` |
+
+Upload the exact `.pbiviz` recorded in `dist/release-metadata.json`. Do not
+regenerate it between recording the manifest and uploading.
+
+## 2. Listing assets
+
+| Partner Center field | Requirement | Value in this repository |
+| --- | --- | --- |
+| Logo | PNG, exactly 300x300 | `assets/logo-300x300.png` |
+| Screenshots | 1-5 PNGs, exactly 1366x768, each <= 1024 KB | `assets/screenshots/` (3 files, see below) |
+| Support URL | https:// | <https://atlyn.io/contact> |
+| Privacy policy URL | https:// | <https://atlyn.io/legal/privacy> |
+| Terms of use | - | <https://atlyn.io/legal/terms> |
+| EULA | A file, or Microsoft's standard contract | `EULA.md` |
+| Sample report | `.pbix`, fully offline | **Owner action required - see section 4** |
+
+### Screenshots
+
+All three are real renders of the *packaged* visual driven through a mock Power BI
+host over the offline sample dataset. They are produced by `npm run screenshots`
+(`scripts/capture-screenshots.mjs` + `tools/screenshots/`), which packages the
+visual, extracts the bundled JavaScript from the `.pbiviz`, serves the harness on
+loopback, and captures each scene over the Chrome DevTools Protocol at exactly
+1366x768.
+
+| File | Dimensions | Bytes | Shows |
+| --- | --- | --- | --- |
+| `assets/screenshots/01-grouped-distributions.png` | 1366x768 | 39,419 | Five production lines, Type 7 quartile boxes, Tukey whiskers, median, mean cross, outliers, and the row-count diagnostics line |
+| `assets/screenshots/02-outliers-and-diagnostics.png` | 1366x768 | 34,596 | Tukey outliers, including the zero-IQR distribution where the repeated value is itself the fence |
+| `assets/screenshots/03-selection-and-highlight.png` | 1366x768 | 49,956 | Report cross-highlighting and a live host-selection state produced by a real click on a distribution |
+
+Byte counts are re-verified on every run of `npm run audit:submission`; the
+committed sizes above are informational.
+
+### Suggested listing copy
+
+- **Category:** Data visualization / Analytics
+- **Industries:** Manufacturing, Healthcare, Financial services, Education
+- **Short pitch:** Truthful grouped distribution box plots for Power BI, with Type 7
+  quartiles, Tukey whiskers, genuine outlier retention, and explicit row-count
+  diagnostics.
+- **Key differentiator:** The visual never claims data completeness. It reports
+  received, rendered, invalid, and dropped rows, and it flags a full 30,000-row host
+  window as potentially partial.
+
+## 3. Compliance statements
+
+| Topic | Statement |
+| --- | --- |
+| Privileges | `capabilities.json` declares `"privileges": []`. |
+| Network access | None. `tests/package.test.ts` asserts the source contains no `fetch`, `XMLHttpRequest`, `WebSocket`, `eval`, or `Function`. |
+| Unsafe DOM APIs | None. The same test asserts no `innerHTML`, `outerHTML`, or `document.write`. |
+| External assets | None. `pbiviz.json` sets `externalJS: null` and `dependencies: null`. |
+| Localization | `stringResources/` ships `en-US`, `ar-SA`, `de-DE`, `es-ES`, and `fr-FR`, key-aligned by test. |
+| Accessibility | Keyboard focus, high-contrast palette support, reduced motion, RTL, and an offscreen accessible summary table. |
+| Certification status | **Not claimed.** This repository has not been certified or validated by Microsoft. |
+
+## 4. Remaining manual, owner-controlled steps
+
+These cannot be automated from this repository.
+
+### 4.1 Author the sample `.pbix` (required by Microsoft)
+
+A `.pbix` is a proprietary binary that only Power BI Desktop can author, so no
+script in this repository can generate or verify one. Build it as follows:
+
+1. Run `npm run package` and import
+   `dist/atlynDistributionA1B2C3D4E5F6G7H8I9J0.1.0.0.0.pbiviz` into Power BI Desktop
+   via **Insert -> More visuals -> Import a visual from a file**.
+2. **Get data -> Text/CSV** and load
+   `assets/sample-data/atlyn-distribution-sample.csv` (200 rows: `Category`,
+   `Sample`, `Value`). This is the exact dataset the committed screenshots use.
+3. Choose **Load** (not DirectQuery) so the data is imported and the report works
+   with no external connection.
+4. Add the Atlyn Distribution visual to the page and bind:
+   - `Category` -> **Category** field well
+   - `Sample` -> **Sample** field well
+   - `Value` -> **Value** field well, set to **Don't summarize**
+5. Confirm the report renders offline: close Power BI Desktop, disconnect from the
+   network, reopen the file, and verify the visual still renders.
+6. Save as `assets/sample-report/atlyn-distribution-sample.pbix` and commit it.
+   `npm run audit:submission` will then report the sample report as present.
+
+`Don't summarize` on the `Value` field matters: the visual deliberately rejects
+aggregated Category/Value pairs, because an aggregate is not a raw distribution.
+
+### 4.2 Partner Center account and listing
+
+1. Confirm the Partner Center publisher account, publisher display name, and the
+   tax and payout profile are complete.
+2. Create the Power BI visual offer and upload the exact `.pbiviz` recorded in
+   `dist/release-metadata.json`.
+3. Upload `assets/logo-300x300.png` as the logo and the three files in
+   `assets/screenshots/` as the listing screenshots.
+4. Paste the support URL <https://atlyn.io/contact> and the privacy policy URL
+   <https://atlyn.io/legal/privacy>.
+5. Attach `EULA.md` as the EULA, or select Microsoft's standard contract.
+6. Upload the sample `.pbix` from section 4.1.
+7. Submit for review.
+
+### 4.3 Pre-submission link check
+
+Re-confirm immediately before submitting that both URLs return HTTP 200:
+
+- <https://atlyn.io/legal/privacy>
+- <https://atlyn.io/contact>
+
+`https://atlyn.io/privacy`, `https://atlyn.io/support`, and `https://atlyn.io/terms`
+return 404 and must not be used.
+
+## 5. Verification commands
+
+```text
+npm ci
+npm test                      # includes the submission asset assertions
+npm run typecheck
+npm run eslint
+npm run package
+npm run package:reproducible
+npm run release:metadata
+npm run audit:submission      # deterministic AppSource asset gate
+npm run certification-audit   # pbiviz certification audit + audit:submission
+npm audit --audit-level=high
+npm run screenshots           # re-captures assets/screenshots from the built visual
+```
+
+`npm run screenshots` needs a locally installed Chrome, Edge, or Chromium (or
+`CHROME_PATH` pointing at one) and Node 22 or newer. It is intentionally not part
+of CI; CI validates the committed PNGs instead.

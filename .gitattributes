@@ -1,0 +1,6 @@
+# Keep the checked-in submission assets byte-stable across platforms so the
+# deterministic audit in scripts/audit-submission-assets.mjs cannot drift.
+*.png binary
+*.pbiviz binary
+*.pbix binary
+assets/sample-data/*.csv text eol=crlf

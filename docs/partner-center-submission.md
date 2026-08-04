@@ -262,7 +262,7 @@ npm run sample-report         # regenerates samples/ from the built .pbiviz
 npm run icon                  # re-renders assets/icon.png at 20x20 from assets/icon.svg
 npm run audit:submission      # deterministic AppSource asset gate
 npm run certification-audit   # pbiviz certification audit + audit:submission
-npm audit --audit-level=high
+npm audit
 npm run screenshots           # re-captures assets/screenshots from the built visual
 ```
 

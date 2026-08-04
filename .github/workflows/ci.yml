@@ -37,7 +37,7 @@ jobs:
       - name: Verify reproducible package
         run: npm run package:reproducible
       - name: Audit dependencies
-        run: npm audit --audit-level=high
+        run: npm audit
       - name: Audit AppSource submission assets
         run: npm run audit:submission
       - name: Run certification audit

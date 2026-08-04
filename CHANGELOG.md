@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Fail the dependency audit on any advisory, not just high and critical. `npm run audit` and the CI step now run a plain `npm audit`, matching the other five visuals in the portfolio; `--audit-level=high` had been masking a moderate advisory the rest of the portfolio already fails on. `npm run audit:production` keeps `--omit=dev` but drops the same threshold, so it differs from `npm run audit` only in scope.
+- Pin `hono` to `^4.12.34` through `overrides` to clear GHSA-8j4g-w8fx-2239, a ReDoS in hono's CORS middleware reached transitively through `powerbi-visuals-tools`.
+
 ## 1.0.1
 
 Prepares the visual for its Microsoft AppSource / Partner Center submission.

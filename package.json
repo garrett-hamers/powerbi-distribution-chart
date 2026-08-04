@@ -14,6 +14,7 @@
     "package": "node scripts/package.mjs",
     "package:certification": "node scripts/package.mjs --certification-audit",
     "package:reproducible": "node scripts/verify-reproducible-package.mjs",
+    "release:metadata": "node scripts/release-metadata.mjs",
     "certification-audit": "npm run package:certification",
     "start": "pbiviz start",
     "test": "jest --runInBand --coverage",

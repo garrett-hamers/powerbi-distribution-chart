@@ -29,6 +29,7 @@ npm run build
 npm run eslint
 npm run package
 npm run package:reproducible
+npm run release:metadata
 npm audit
 npm run certification-audit
 ```
@@ -44,6 +45,9 @@ exact filename, byte count, and SHA-256 to match. A release manifest must
 record the final main commit, package filename, SHA-256, Node/npm versions, and
 `powerbi-visuals-tools` version; upload that exact file to Blob/AppSource
 instead of regenerating it.
+`npm run release:metadata` writes that deterministic manifest to
+`dist/release-metadata.json` and validates the checked-in Partner Center logo at
+`assets/logo-300x300.png`.
 
 The package has no privileges, network access, external assets, or unsafe DOM
 APIs. Microsoft certification and validation in a real Power BI host are not

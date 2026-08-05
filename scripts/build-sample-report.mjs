@@ -26,15 +26,31 @@ export const TABLE_NAME = "Measurements";
 export const PAGE_DISPLAY_NAME = "Cycle time distribution";
 export const VISUAL_TITLE = "Cycle time distribution by production line";
 
+/**
+ * Schema versions are pinned to match `powerbi-scatter-chart`, whose sample is the only
+ * one in the portfolio confirmed to open in Power BI Desktop.
+ *
+ * Aligned to a known-good reference rather than bumped to the newest available: "matches
+ * a sample that demonstrably opens" is a claim that can be supported, "newer is better"
+ * is not. `item/report/definitionProperties` moves *down* from 2.0.0 to 1.0.0 for exactly
+ * that reason - this project had paired a v2 properties document with definition files
+ * that both working references express as v2.1.0.
+ *
+ * Note that schema validation cannot detect a wrong choice here: a document is validated
+ * against whichever schema it names, and each of these schemas pins its own major version
+ * in a `$schema` pattern, so naming an older one is self-consistent by construction and
+ * passes. Comparison against a known-good reference is the only thing that catches it,
+ * which is why `npm run audit:submission` pins these URLs.
+ */
 export const SCHEMAS = {
   pbip: "https://developer.microsoft.com/json-schemas/fabric/pbip/pbipProperties/1.0.0/schema.json",
   platform: "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
-  reportDefinition: "https://developer.microsoft.com/json-schemas/fabric/item/report/definitionProperties/2.0.0/schema.json",
+  reportDefinition: "https://developer.microsoft.com/json-schemas/fabric/item/report/definitionProperties/1.0.0/schema.json",
   semanticModelDefinition: "https://developer.microsoft.com/json-schemas/fabric/item/semanticModel/definitionProperties/1.0.0/schema.json",
   versionMetadata: "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/versionMetadata/1.0.0/schema.json",
-  report: "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/report/2.0.0/schema.json",
-  pagesMetadata: "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/pagesMetadata/1.0.0/schema.json",
-  page: "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/page/2.0.0/schema.json",
+  report: "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/report/2.1.0/schema.json",
+  pagesMetadata: "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/pagesMetadata/1.1.0/schema.json",
+  page: "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/page/2.1.0/schema.json",
   visualContainer: "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.7.0/schema.json",
 };
 

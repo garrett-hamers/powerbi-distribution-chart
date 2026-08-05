@@ -62,9 +62,13 @@ hide.
 probe to go red on the cases that fix governs. A fix that cannot be shown to fail without
 its patch is not proven, and this script fails if one stays green.
 
-Both run in CI on every push. The Linux runner resolves a different font stack from a
-developer's Windows machine, so its text metrics are genuinely different numbers rather
-than a replay of local ones.
+Both run in CI on every push, on Node 22 - the probe drives Chrome over the DevTools
+Protocol using the global `WebSocket`, which is only unflagged from Node 22. The runner
+resolves its own font files rather than replaying a local measurement: the visual sets no
+`font-family` on its SVG text, so it renders in the browser's default serif, Times New
+Roman on Windows and a metric-compatible substitute on Linux. The measurements agree
+across the two because those substitutes are metric-compatible by design, not because
+anything is being replayed.
 
 ## Release artifacts
 

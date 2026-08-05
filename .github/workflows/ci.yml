@@ -40,9 +40,10 @@ jobs:
       # The layout probe renders the packaged bundle in real headless Chromium and
       # measures every element against the visual root's clipped box. It has to run on a
       # real engine: JSDOM has no layout, so every rectangle it reports is zero and a
-      # geometry assertion written against it can never fail. The Linux runner also
-      # resolves a different font stack from a developer's Windows machine, so text
-      # metrics here are genuinely different numbers, not a replay of local ones.
+      # geometry assertion written against it can never fail. The runner resolves its own
+      # font files rather than replaying any local measurement - the visual sets no
+      # font-family on its SVG text, so it renders in the browser's default serif, which
+      # is Times New Roman on Windows and a metric-compatible substitute here.
       - name: Probe layout against the clipped visual root
         run: npm run layout-probe -- --skip-package
       - name: Prove the layout fixes still fail without their patches

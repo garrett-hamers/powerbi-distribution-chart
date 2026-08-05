@@ -157,7 +157,7 @@ async function connect(endpoint) {
 
 export async function launchBrowser(executablePath, profileDirectory, extraFlags = []) {
   if (typeof WebSocket === "undefined") {
-    throw new Error("This Node.js runtime has no global WebSocket; Node 22 or newer is required to capture screenshots.");
+    throw new Error("This Node.js runtime has no global WebSocket; Node 22 or newer is required to drive a browser.");
   }
 
   const isHeadlessShell = /headless[-_]shell/i.test(path.basename(executablePath));

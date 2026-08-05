@@ -251,6 +251,17 @@ export async function buildSampleReportFiles(options = {}) {
   }));
   add(`${SAMPLE_ROOT}/${reportFolder}/definition/report.json`, json({
     $schema: SCHEMAS.report,
+    // `themeCollection.baseTheme` references CY24SU10 *by name*. It is one of the base
+    // themes built into Power BI Desktop, which resolves the name internally - nothing has
+    // to ship alongside the report for this to work.
+    //
+    // Deliberately NOT accompanied by a `type: SharedResources` resource package. A
+    // resource package asserts the item ships as a *file inside the report*, so Desktop
+    // resolves its path against the project; declaring one for a built-in theme points it
+    // at a `BaseThemes/CY24SU10.json` that was never emitted, and Desktop fails to open the
+    // project. `npm run audit:submission` resolves every declared reference against disk
+    // and fails on a dangling one, because a JSON schema cannot catch this: a path to a
+    // file that does not exist is perfectly schema-valid.
     themeCollection: {
       baseTheme: { name: "CY24SU10", reportVersionAtImport: "5.55", type: "SharedResources" },
     },
@@ -265,11 +276,6 @@ export async function buildSampleReportFiles(options = {}) {
           path: `${guid}.pbiviz.json`,
           type: "CustomVisualMetadata",
         }],
-      },
-      {
-        name: "SharedResources",
-        type: "SharedResources",
-        items: [{ name: "CY24SU10", path: "BaseThemes/CY24SU10.json", type: "BaseTheme" }],
       },
     ],
     settings: {

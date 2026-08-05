@@ -14,6 +14,7 @@
     "lint": "eslint .",
     "package": "node scripts/package.mjs",
     "layout-probe": "node scripts/layout-probe.mjs",
+    "layout-selftest": "node scripts/layout-selftest.mjs",
     "prove-regressions": "node scripts/prove-regressions.mjs",
     "package:certification": "node scripts/package.mjs --certification-audit",
     "package:reproducible": "node scripts/verify-reproducible-package.mjs",

@@ -13,5 +13,5 @@
     "sourceMap": true
   },
   "files": ["src/visual.ts"],
-  "include": ["src/**/*.ts", "tests/**/*.ts"]
+  "include": ["src/**/*.ts", "tests/**/*.ts", "tools/**/*.d.ts"]
 }

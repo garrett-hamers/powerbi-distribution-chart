@@ -19,6 +19,15 @@
  *
  * Exemptions are counted and reported rather than silently dropped, so a probe run can
  * never hide a regression behind a growing pile of "not my problem" elements.
+ *
+ * The scroll-container exemption carries an obligation: content reachable by scrolling is
+ * only genuinely reachable if something actually scrolls to it. This module therefore
+ * exposes `scrollRegionTo`, and the Node driver walks every region through its full travel
+ * and re-measures at each stop.
+ *
+ * Measurement lives here; judgement lives in `rules.js`, which runs in Node and is unit
+ * tested. Keeping the two apart means every rule can be driven with deliberately bad
+ * numbers instead of only ever seeing whatever the real visual happens to render.
  */
 
 const TOLERANCE_PX = 0.5;
@@ -127,19 +136,44 @@ export function measureOverflow(root, options = {}) {
     if (selfScrollable && !inherited.scrollable) {
       scrollRoots.add(describe(element));
     }
+    const scrollContainer = selfScrollable && !inherited.scrollContainer
+      ? element
+      : inherited.scrollContainer;
 
     if (element !== root && style.position === "absolute") {
       absolutelyPositioned += 1;
     }
+
+    /*
+      The scroll exemption is justified by "the user can scroll to it", which is only true
+      of content that actually scrolls with the container.
+
+      A `sticky` element pins and stops moving; a `fixed` one never moved to begin with;
+      an `absolute` one whose containing block sits outside the scroll container is
+      likewise unaffected by that container's scrolling. If any of those is painted outside
+      the visual root, no amount of scrolling brings it back - it is clipped exactly like
+      any other escapee. Excusing them wholesale is how a sticky-header collapse walks
+      straight through an overflow walk unnoticed.
+    */
+    const scrollsWithContainer = (() => {
+      if (style.position === "sticky" || style.position === "fixed") {
+        return false;
+      }
+      if (style.position === "absolute" && inherited.scrollContainer) {
+        const block = containingBlockFor(element, style.position, view);
+        return block !== null && inherited.scrollContainer.contains(block);
+      }
+      return true;
+    })();
 
     if (element !== root) {
       if (unpainted) {
         exempt.unpainted += 1;
       } else if (clipPathHidden) {
         exempt.clipPathHidden += 1;
-      } else if (inherited.scrollable) {
+      } else if (inherited.scrollable && scrollsWithContainer) {
         // Reachable by scrolling, so it is not lost. The scroll container itself is
-        // still measured; only its descendants are excused.
+        // still measured; only the descendants that genuinely scroll are excused.
         exempt.scrollable += 1;
       } else if (rect.width === 0 && rect.height === 0) {
         // Non-rendered SVG containers (defs, empty groups) and the like.
@@ -174,11 +208,11 @@ export function measureOverflow(root, options = {}) {
     }
 
     for (const child of element.children) {
-      visit(child, { unpainted, clipPathHidden, scrollable });
+      visit(child, { unpainted, clipPathHidden, scrollable, scrollContainer });
     }
   };
 
-  visit(root, { unpainted: false, clipPathHidden: false, scrollable: false });
+  visit(root, { unpainted: false, clipPathHidden: false, scrollable: false, scrollContainer: null });
 
   overflows.sort((left, right) => right.escape - left.escape);
 
@@ -197,6 +231,228 @@ export function measureOverflow(root, options = {}) {
     overflowCount: overflows.length,
     maxEscape: overflows.length > 0 ? overflows[0].escape : 0,
     overflows,
+  };
+}
+
+/**
+ * Resolves the element that actually forms the containing block for `element`.
+ *
+ * This is the diagnostic behind one of the two defect classes this addition exists to
+ * catch. An absolutely positioned element resolves against its nearest *positioned*
+ * ancestor - but if no such ancestor exists it resolves against the **initial containing
+ * block**, escaping the visual root's `overflow: hidden` entirely and belonging to the
+ * page rather than to the visual. A sibling repository shipped exactly that: a
+ * screen-reader caption whose `offsetParent` was `<body>`.
+ *
+ * `offsetParent` is the usual shortcut but it is not reliable here - it is null for
+ * `position: fixed` and for anything inside a `display: none` subtree, and this visual
+ * has both. So the ancestor chain is walked directly, honouring the layout-inducing
+ * properties that also establish a containing block for positioned descendants.
+ *
+ * @returns the containing block ancestor, or null when it is the initial containing block
+ */
+export function containingBlockFor(element, position, view) {
+  if (position === "static" || position === "relative" || position === "sticky") {
+    // These resolve against the parent's content box, not against a positioned ancestor.
+    return element.parentElement;
+  }
+
+  // transform, filter, perspective, will-change and paint/layout containment establish a
+  // containing block even for `position: fixed`, which otherwise resolves to the viewport.
+  const establishesForFixed = (style) => (style.transform && style.transform !== "none")
+    || (style.filter && style.filter !== "none")
+    || (style.perspective && style.perspective !== "none")
+    || (style.willChange ?? "").split(",").some((token) => ["transform", "filter", "perspective"].includes(token.trim()))
+    || ["paint", "layout", "strict", "content"].some((token) => (style.contain ?? "").includes(token));
+
+  let ancestor = element.parentElement;
+  while (ancestor) {
+    const style = view.getComputedStyle(ancestor);
+    const establishes = position === "fixed"
+      ? establishesForFixed(style)
+      : style.position !== "static" || establishesForFixed(style);
+    if (establishes) {
+      return ancestor;
+    }
+    ancestor = ancestor.parentElement;
+  }
+  return null;
+}
+
+/**
+ * Positioning triage.
+ *
+ * The cheapest available check for two whole defect classes, run before anything is
+ * scrolled or measured for overflow:
+ *
+ *   - a root computing `static` while holding absolutely positioned descendants means
+ *     those descendants resolve against the initial containing block and leave the visual;
+ *   - `position: sticky` inside a genuinely scrolling region is the header-pinning bug,
+ *     which no at-rest assertion can see.
+ *
+ * Also records any z-index specified on an element that is not positioned at all.
+ * `getComputedStyle().zIndex` returns the *specified* value regardless of position, so a
+ * stacking comparison can read a confident-looking order out of a stacking context that
+ * does not exist.
+ */
+export function measurePositioning(root, options = {}) {
+  const view = options.view ?? globalThis;
+  const rootStyle = view.getComputedStyle(root);
+
+  const counts = { static: 0, relative: 0, absolute: 0, fixed: 0, sticky: 0 };
+  const positioned = [];
+  const escapees = [];
+  const zIndexOnUnpositioned = [];
+
+  const visit = (element) => {
+    if (element !== root) {
+      const style = view.getComputedStyle(element);
+      const position = style.position;
+      counts[position] = (counts[position] ?? 0) + 1;
+
+      const zIndex = style.zIndex;
+      const hasZIndex = zIndex !== "auto" && zIndex !== "";
+      if (hasZIndex && position === "static") {
+        zIndexOnUnpositioned.push({ selector: describe(element), zIndex });
+      }
+
+      if (position !== "static" && position !== "relative") {
+        const block = containingBlockFor(element, position, view);
+        const containedByRoot = block !== null && (block === root || root.contains(block));
+        const entry = {
+          selector: describe(element),
+          position,
+          zIndex: hasZIndex ? zIndex : null,
+          containingBlock: block === null ? "(initial containing block)" : describe(block),
+          containingBlockIsRoot: block === root,
+          containedByRoot,
+        };
+        positioned.push(entry);
+        if (!containedByRoot) {
+          escapees.push(entry);
+        }
+      }
+    }
+    for (const child of element.children) {
+      visit(child);
+    }
+  };
+
+  visit(root);
+
+  return {
+    rootPosition: rootStyle.position,
+    // Both halves are reported rather than just a verdict: an unpositioned root is only a
+    // defect in combination with an absolutely positioned descendant.
+    rootIsPositioned: rootStyle.position !== "static",
+    counts,
+    positioned,
+    escapees,
+    zIndexOnUnpositioned,
+    stickyCount: counts.sticky ?? 0,
+    fixedCount: counts.fixed ?? 0,
+    absoluteCount: counts.absolute ?? 0,
+  };
+}
+
+/**
+ * Finds every real scroll container under `root` and how far it can actually scroll.
+ *
+ * A container reporting `maxScrollTop: 0` is not scrolling whatever its `overflow` says,
+ * and a probe that detects a scroll container without ever scrolling it leaves every
+ * scroll-time assertion as dead weight - a sibling repository had precisely that, and
+ * once it started scrolling it found a region with 24,467px of travel.
+ */
+export function findScrollRegions(root, options = {}) {
+  const view = options.view ?? globalThis;
+  const regions = [];
+
+  const visit = (element) => {
+    const style = view.getComputedStyle(element);
+    const scrollableY = ["auto", "scroll"].includes(style.overflowY);
+    const scrollableX = ["auto", "scroll"].includes(style.overflowX);
+    if (scrollableY || scrollableX) {
+      regions.push({
+        selector: describe(element),
+        element,
+        overflowX: style.overflowX,
+        overflowY: style.overflowY,
+        scrollHeight: element.scrollHeight,
+        clientHeight: element.clientHeight,
+        scrollWidth: element.scrollWidth,
+        clientWidth: element.clientWidth,
+        maxScrollTop: Math.max(0, element.scrollHeight - element.clientHeight),
+        maxScrollLeft: Math.max(0, element.scrollWidth - element.clientWidth),
+      });
+    }
+    for (const child of element.children) {
+      visit(child);
+    }
+  };
+
+  visit(root);
+  return regions;
+}
+
+/**
+ * Records where every sticky element has landed, relative to the root, so the caller can
+ * check they stay distinct under scroll instead of collapsing onto one another.
+ */
+export function measureStickyOffsets(root, options = {}) {
+  const view = options.view ?? globalThis;
+  const rootRect = root.getBoundingClientRect();
+  const samples = [];
+
+  const visit = (element) => {
+    const style = view.getComputedStyle(element);
+    if (style.position === "sticky") {
+      const rect = element.getBoundingClientRect();
+      samples.push({
+        selector: describe(element),
+        position: style.position,
+        top: round(rect.top - rootRect.top),
+        left: round(rect.left - rootRect.left),
+        height: round(rect.height),
+        width: round(rect.width),
+        zIndex: style.zIndex,
+        text: (element.textContent ?? "").trim().slice(0, 40),
+      });
+    }
+    for (const child of element.children) {
+      visit(child);
+    }
+  };
+
+  visit(root);
+  return samples;
+}
+
+/**
+ * Scrolls one region to `offset` and re-measures everything that scrolling can change.
+ *
+ * The offsets to visit are chosen in Node by `scrollOffsetsFor`, so the schedule itself is
+ * unit tested rather than hidden in the page. What is returned is `applied`, the offset
+ * the engine actually settled on - a region that cannot travel clamps silently, and
+ * recording the requested value would make a walk look like it covered ground it never
+ * reached.
+ */
+export function scrollRegionTo(root, selector, offset, view = globalThis) {
+  const region = findScrollRegions(root, { view }).find((candidate) => candidate.selector === selector);
+  if (!region) {
+    return { found: false, selector, requested: offset };
+  }
+
+  region.element.scrollTop = offset;
+  const applied = region.element.scrollTop;
+  void region.element.getBoundingClientRect();
+
+  return {
+    found: true,
+    selector,
+    requested: offset,
+    applied,
+    overflow: measureOverflow(root, { view }),
+    sticky: measureStickyOffsets(root, { view }),
   };
 }
 

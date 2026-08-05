@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
+import JSZip from "jszip";
 import { hasPngSignature, readPngHeader } from "./png-utils.mjs";
 import { buildSampleCsv } from "./write-sample-dataset.mjs";
 import { SAMPLE_SLUG, buildSampleReportFiles } from "./build-sample-report.mjs";
@@ -371,6 +372,258 @@ await check("sample report binds the frozen GUID with declared roles and no exte
   );
 
   return `${stateKeys.join(", ")} bound to ${FROZEN_GUID}`;
+});
+
+/**
+ * Where a resource package item's `path` is resolved from, per package type.
+ *
+ * Several candidate bases are tried for each type and *all* of them are reported when a
+ * reference resolves against none, so a miss cannot be waved away as "the audit guessed
+ * the wrong base directory". A path that resolves under no documented base does not exist
+ * under any of them.
+ */
+const RESOURCE_PACKAGE_BASES = {
+  CustomVisual: (pkg) => [
+    `CustomVisuals/${pkg.name}/resources`,
+    `CustomVisuals/${pkg.name}`,
+  ],
+  SharedResources: () => [
+    "StaticResources/SharedResources",
+    "SharedResources",
+  ],
+  RegisteredResources: () => [
+    "StaticResources/RegisteredResources",
+    "RegisteredResources",
+  ],
+};
+
+/**
+ * Resolves every internal reference the sample project declares against what is actually
+ * on disk.
+ *
+ * This exists because JSON Schema cannot catch this class of defect. Schema validation
+ * constrains *shape*: a `path` that points at a file which does not exist is perfectly
+ * schema-valid, so a schema pass over a report that Desktop refuses to open returns green
+ * and produces exactly the false assurance a check like this is supposed to remove. The
+ * only way to know a declared reference is real is to resolve it.
+ *
+ * A resource package declaring `type: SharedResources` is not a by-name reference to one
+ * of Desktop's built-in themes - that is what `themeCollection.baseTheme` is for, and it
+ * is legitimate. A resource package asserts the item ships *as a file inside the report*,
+ * so Desktop resolves the path, and a path to nothing is a broken report.
+ */
+await check("sample report has no dangling internal references", () => {
+  const samplesRoot = path.join(root, "samples");
+  const reportFolder = `${SAMPLE_SLUG}.Report`;
+  const references = [];
+
+  /**
+   * @param from the file that declares the reference
+   * @param kind "file" or "directory"
+   * @param candidates repo-relative POSIX paths, any one of which satisfies the reference
+   */
+  const declare = (from, description, kind, candidates) => {
+    references.push({ from, description, kind, candidates });
+  };
+
+  // 1. The .pbip names its artifact folders.
+  const pbipPath = path.join(samplesRoot, `${SAMPLE_SLUG}.pbip`);
+  const pbip = readJson(pbipPath);
+  for (const artifact of pbip.artifacts ?? []) {
+    for (const [artifactKind, artifactValue] of Object.entries(artifact)) {
+      if (artifactValue?.path) {
+        declare(`${SAMPLE_SLUG}.pbip`, `${artifactKind} artifact "${artifactValue.path}"`, "directory", [
+          `samples/${artifactValue.path}`,
+        ]);
+      }
+    }
+  }
+
+  // 2. The .pbir points the report at its semantic model.
+  const pbirPath = path.join(samplesRoot, reportFolder, "definition.pbir");
+  const pbir = readJson(pbirPath);
+  const datasetPath = pbir.datasetReference?.byPath?.path;
+  if (datasetPath) {
+    declare(`${reportFolder}/definition.pbir`, `dataset "${datasetPath}"`, "directory", [
+      path.posix.normalize(`samples/${reportFolder}/${datasetPath}`),
+    ]);
+  }
+
+  // 3. Every resource package item claims to ship as a file inside the report.
+  const reportJsonPath = path.join(samplesRoot, reportFolder, "definition", "report.json");
+  const report = readJson(reportJsonPath);
+  for (const pkg of report.resourcePackages ?? []) {
+    const bases = RESOURCE_PACKAGE_BASES[pkg.type];
+    ensure(
+      bases,
+      `report.json declares resource package type "${pkg.type}", which this audit cannot `
+      + "resolve. Add its base directory to RESOURCE_PACKAGE_BASES rather than skipping it.",
+    );
+    for (const item of pkg.items ?? []) {
+      declare(
+        `${reportFolder}/definition/report.json`,
+        `${pkg.type} package "${pkg.name}" item "${item.path}"`,
+        "file",
+        bases(pkg).map((base) => `samples/${reportFolder}/${base}/${item.path}`),
+      );
+    }
+  }
+
+  // 4. pages.json names page folders.
+  const pagesJsonPath = path.join(samplesRoot, reportFolder, "definition", "pages", "pages.json");
+  const pages = readJson(pagesJsonPath);
+  const pageBase = `samples/${reportFolder}/definition/pages`;
+  for (const pageName of pages.pageOrder ?? []) {
+    declare("definition/pages/pages.json", `pageOrder entry "${pageName}"`, "directory", [`${pageBase}/${pageName}`]);
+  }
+  if (pages.activePageName) {
+    declare("definition/pages/pages.json", `activePageName "${pages.activePageName}"`, "directory", [
+      `${pageBase}/${pages.activePageName}`,
+    ]);
+  }
+
+  // 5. Each page and visual folder must carry the name its own definition claims, and each
+  //    visual must reference a visual type the report actually embeds.
+  const declaredCustomVisuals = new Set(
+    (report.resourcePackages ?? [])
+      .filter((pkg) => pkg.type === "CustomVisual")
+      .map((pkg) => pkg.name),
+  );
+  const identityMismatches = [];
+  const pageDirectories = readdirSync(path.join(samplesRoot, reportFolder, "definition", "pages"), { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name);
+
+  for (const pageDirectory of pageDirectories) {
+    const pageJson = readJson(path.join(samplesRoot, reportFolder, "definition", "pages", pageDirectory, "page.json"));
+    if (pageJson.name !== pageDirectory) {
+      identityMismatches.push(`page folder "${pageDirectory}" declares name "${pageJson.name}"`);
+    }
+    const visualsRoot = path.join(samplesRoot, reportFolder, "definition", "pages", pageDirectory, "visuals");
+    if (!existsSync(visualsRoot)) {
+      continue;
+    }
+    for (const visualEntry of readdirSync(visualsRoot, { withFileTypes: true }).filter((entry) => entry.isDirectory())) {
+      declare(
+        `definition/pages/${pageDirectory}`,
+        `visual folder "${visualEntry.name}"`,
+        "file",
+        [`${pageBase}/${pageDirectory}/visuals/${visualEntry.name}/visual.json`],
+      );
+      const visualJson = readJson(path.join(visualsRoot, visualEntry.name, "visual.json"));
+      if (visualJson.name !== visualEntry.name) {
+        identityMismatches.push(`visual folder "${visualEntry.name}" declares name "${visualJson.name}"`);
+      }
+      const visualType = visualJson.visual?.visualType;
+      // A custom visual type has to be embedded, or the report silently renders nothing
+      // offline. Built-in types are not resolvable against disk and are left alone.
+      if (visualType && /^[a-zA-Z]+[A-Z0-9]{16,}$/.test(visualType) && !declaredCustomVisuals.has(visualType)) {
+        identityMismatches.push(
+          `visual "${visualEntry.name}" uses custom visual type "${visualType}", `
+          + "which no CustomVisual resource package embeds",
+        );
+      }
+    }
+  }
+
+  // 6. The embedded visual's own manifest names its resource files.
+  for (const packageName of declaredCustomVisuals) {
+    const manifestRelative = `samples/${reportFolder}/CustomVisuals/${packageName}/package.json`;
+    const manifestPath = path.join(root, manifestRelative);
+    if (!existsSync(manifestPath)) {
+      declare(`${reportFolder}/definition/report.json`, `CustomVisual package manifest for "${packageName}"`, "file", [manifestRelative]);
+      continue;
+    }
+    const manifest = readJson(manifestPath);
+    for (const resource of manifest.resources ?? []) {
+      if (resource.file) {
+        declare(
+          `CustomVisuals/${packageName}/package.json`,
+          `resource "${resource.file}"`,
+          "file",
+          [`samples/${reportFolder}/CustomVisuals/${packageName}/${resource.file}`],
+        );
+      }
+    }
+  }
+
+  // 7. model.tmdl references its table definitions by name.
+  const semanticModelFolder = `${SAMPLE_SLUG}.SemanticModel`;
+  const modelTmdlPath = path.join(samplesRoot, semanticModelFolder, "definition", "model.tmdl");
+  const modelTmdl = readFileSync(modelTmdlPath, "utf8");
+  for (const match of modelTmdl.matchAll(/^\s*ref\s+table\s+(.+?)\s*$/gm)) {
+    const tableName = match[1].replace(/^'(.*)'$/, "$1");
+    declare(`${semanticModelFolder}/definition/model.tmdl`, `ref table ${tableName}`, "file", [
+      `samples/${semanticModelFolder}/definition/tables/${tableName}.tmdl`,
+    ]);
+  }
+
+  const resolves = (reference) => reference.candidates.some((candidate) => {
+    const absolute = path.join(root, candidate);
+    if (!existsSync(absolute)) {
+      return false;
+    }
+    const stats = statSync(absolute);
+    return reference.kind === "directory" ? stats.isDirectory() : stats.isFile();
+  });
+
+  const dangling = references.filter((reference) => !resolves(reference));
+  ensure(
+    dangling.length === 0,
+    `Sample report declares ${dangling.length} reference(s) that resolve to nothing on disk. `
+    + "Power BI Desktop resolves these paths when it opens the project, so a dangling one "
+    + "means the sample does not open:\n"
+    + dangling
+      .map((reference) => `      ${reference.from}: ${reference.description}\n`
+        + `        tried: ${reference.candidates.join(", ")}`)
+      .join("\n"),
+  );
+
+  ensure(identityMismatches.length === 0, `Sample report has inconsistent names: ${identityMismatches.join("; ")}`);
+
+  return `${references.length} references resolve`;
+});
+
+await check("sample report embeds the current build of the visual", async () => {
+  const reportFolder = `${SAMPLE_SLUG}.Report`;
+  const embeddedRoot = path.join(root, "samples", reportFolder, "CustomVisuals", FROZEN_GUID);
+  if (!existsSync(embeddedRoot)) {
+    // The generator omits the embedded visual when dist/ has no package. That is already
+    // reported by the drift check; do not invent a second failure for it.
+    return "no embedded visual to compare (dist/ has no package)";
+  }
+
+  const artifactPath = path.join(root, "dist", `${FROZEN_GUID}.${visual.version}.pbiviz`);
+  ensure(
+    existsSync(artifactPath),
+    `samples/ embeds the visual but dist/${FROZEN_GUID}.${visual.version}.pbiviz is missing, `
+    + "so the embedded copy cannot be shown to be current. Run `npm run package`.",
+  );
+
+  // Compared byte-for-byte against the archive rather than trusted: a stale embedded copy
+  // ships a different visual than the one under test, and nothing else would notice.
+  const archive = await JSZip.loadAsync(readFileSync(artifactPath));
+  const entries = ["package.json", `resources/${FROZEN_GUID}.pbiviz.json`];
+
+  const stale = [];
+  for (const entry of entries) {
+    const embeddedPath = path.join(embeddedRoot, entry);
+    ensure(existsSync(embeddedPath), `Embedded visual is missing ${entry}.`);
+    const archived = archive.file(entry);
+    ensure(archived, `Packaged visual has no ${entry} entry.`);
+    const fromArchive = Buffer.from(await archived.async("uint8array"));
+    if (!readFileSync(embeddedPath).equals(fromArchive)) {
+      stale.push(entry);
+    }
+  }
+
+  ensure(
+    stale.length === 0,
+    "Embedded visual is stale; re-run `npm run package && npm run sample-report`. "
+    + `Differs from dist/: ${stale.join(", ")}`,
+  );
+
+  return `${entries.length} embedded file(s) byte-identical to dist/`;
 });
 
 const sampleReportPbix = path.join(root, "samples", `${SAMPLE_SLUG}.pbix`);

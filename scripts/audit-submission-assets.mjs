@@ -584,6 +584,122 @@ await check("sample report has no dangling internal references", () => {
   return `${references.length} references resolve`;
 });
 
+/**
+ * The indentation the expression block under `source =` must start at.
+ *
+ * TMDL takes the *first* expression line's indentation as the baseline for the whole
+ * block, so this depth changes how everything beneath it is parsed - it is load-bearing,
+ * not cosmetic. Four tabs is what the sibling sample that is known to open in Power BI
+ * Desktop uses; this project shipped three, and was the only one of six that did.
+ */
+const EXPRESSION_BASELINE_TABS = 4;
+
+const leadingTabs = (line) => line.length - line.replace(/^\t+/, "").length;
+
+/**
+ * Pins the two TMDL shape details this project diverged on.
+ *
+ * Stated carefully: unlike a dangling reference, which resolves to nothing and is
+ * therefore provably broken, neither of these can be shown to be causal without opening
+ * the sample in Power BI Desktop. They are *departures from the only configuration known
+ * to open*, which is reason enough to hold them and not reason enough to call them proven
+ * defects.
+ *
+ * This is checked against the generator's output rather than left to the drift check,
+ * because the generator is the source of truth: drift compares the committed sample to
+ * whatever the generator currently emits, so editing the generator moves both sides
+ * together and drift stays silent.
+ */
+await check("sample semantic model keeps the TMDL shape known to open in Desktop", () => {
+  const tablesRoot = path.join(root, "samples", `${SAMPLE_SLUG}.SemanticModel`, "definition", "tables");
+  const tableFiles = readdirSync(tablesRoot, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".tmdl"))
+    .map((entry) => entry.name);
+  ensure(tableFiles.length > 0, "Sample semantic model declares no table files.");
+
+  const problems = [];
+  let expressionBlocks = 0;
+  let calculatedColumns = 0;
+
+  for (const fileName of tableFiles) {
+    const lines = readFileSync(path.join(tablesRoot, fileName), "utf8").split(/\r?\n/);
+    const isCalculatedTable = lines.some((line) => /^\s*partition .+ = calculated\s*$/.test(line));
+    if (!isCalculatedTable) {
+      continue;
+    }
+
+    // Explicit column types on a calculated table restate what the DATATABLE declaration
+    // in the partition already fixes. They can only agree redundantly or disagree.
+    let currentColumn;
+    for (const line of lines) {
+      const columnMatch = /^\t*column\s+(.+?)\s*$/.exec(line);
+      if (columnMatch) {
+        currentColumn = columnMatch[1];
+        calculatedColumns += 1;
+        continue;
+      }
+      if (/^\t*partition\s/.test(line)) {
+        currentColumn = undefined;
+        continue;
+      }
+      const typeMatch = /^\t*dataType:\s*(\S+)/.exec(line);
+      if (typeMatch && currentColumn) {
+        problems.push(
+          `${fileName}: column "${currentColumn}" declares dataType ${typeMatch[1]} on a `
+          + "calculated table, where the DATATABLE declaration already fixes the type",
+        );
+      }
+    }
+
+    // The expression block baseline.
+    for (let index = 0; index < lines.length; index += 1) {
+      if (!/^\t*source\s*=\s*$/.test(lines[index])) {
+        continue;
+      }
+      const sourceTabs = leadingTabs(lines[index]);
+      const firstBodyIndex = lines.findIndex((line, at) => at > index && line.trim().length > 0);
+      ensure(firstBodyIndex !== -1, `${fileName}: "source =" has no expression body.`);
+      expressionBlocks += 1;
+
+      const baseline = leadingTabs(lines[firstBodyIndex]);
+      if (baseline !== EXPRESSION_BASELINE_TABS) {
+        problems.push(
+          `${fileName}: expression block starts at ${baseline} tab(s), expected `
+          + `${EXPRESSION_BASELINE_TABS}. TMDL uses the first line's indentation as the `
+          + "baseline for the whole block, so this changes how all of it parses",
+        );
+      }
+      if (baseline <= sourceTabs) {
+        problems.push(
+          `${fileName}: expression block at ${baseline} tab(s) is not indented deeper than `
+          + `its "source =" at ${sourceTabs} tab(s)`,
+        );
+      }
+
+      // Every remaining line of the block must sit at or below the baseline, or the block
+      // has been re-indented inconsistently.
+      for (let body = firstBodyIndex; body < lines.length; body += 1) {
+        const line = lines[body];
+        if (line.trim().length === 0) {
+          continue;
+        }
+        if (leadingTabs(line) < baseline) {
+          break;
+        }
+      }
+    }
+  }
+
+  ensure(
+    problems.length === 0,
+    "Sample semantic model departs from the TMDL shape known to open in Power BI Desktop:\n"
+    + problems.map((problem) => `      ${problem}`).join("\n"),
+  );
+
+  return `${expressionBlocks} expression block(s) at ${EXPRESSION_BASELINE_TABS} tabs, `
+    + `${calculatedColumns} calculated column(s) with no explicit dataType`;
+});
+
 await check("sample report embeds the current build of the visual", async () => {
   const reportFolder = `${SAMPLE_SLUG}.Report`;
   const embeddedRoot = path.join(root, "samples", reportFolder, "CustomVisuals", FROZEN_GUID);

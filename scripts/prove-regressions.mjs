@@ -173,6 +173,15 @@ try {
 
   for (const regression of selected) {
     const baseline = runProbe(regression.filter);
+    if (baseline.report === undefined) {
+      console.error(
+        `The layout probe did not complete while establishing the baseline for `
+        + `"${regression.id}" (exit ${baseline.status}, no JSON report: ${baseline.reportError}).\n`
+        + `probe stdout:\n${(baseline.stdout ?? "").trim() || "(empty)"}\n`
+        + `probe stderr:\n${(baseline.stderr ?? "").trim() || "(empty)"}`,
+      );
+      process.exit(1);
+    }
     if (baseline.status !== 0) {
       console.error(
         `Baseline probe for "${regression.id}" is already failing on ${regression.filter}. `
@@ -204,8 +213,22 @@ try {
     try {
       runPackage();
       const probe = runProbe(regression.filter);
+      if (probe.report === undefined) {
+        // No report means the probe did not finish - a browser launch timeout, a page that
+        // never became ready, a crash. That is not the same as "this fix is unproven", and
+        // conflating the two would let an infrastructure failure masquerade as a verdict
+        // about the code. Fail loudly, with whatever the probe managed to say.
+        throw new Error([
+          `The layout probe did not complete while proving "${regression.id}" `
+          + `(exit ${probe.status}, no JSON report: ${probe.reportError}).`,
+          "This says nothing about the fix - the probe never produced a verdict.",
+          `probe stdout:\n${(probe.stdout ?? "").trim() || "(empty)"}`,
+          `probe stderr:\n${(probe.stderr ?? "").trim() || "(empty)"}`,
+        ].join("\n"));
+      }
+
       const wentRed = probe.status !== 0;
-      const cases = probe.report?.cases ?? [];
+      const cases = probe.report.cases ?? [];
       const offenders = cases.flatMap((entry) => entry.result.overflow.overflows);
       // Match on everything the probe recorded, not just overflow selectors. A reversion
       // can legitimately be caught by a non-overflow rule, and when the match fails the
@@ -243,16 +266,8 @@ try {
           `    UNPROVEN  probe went red on ${regression.filter} but nothing matching `
           + `"${regression.expectSelector}" was reported, so it failed for some other reason.`,
         );
-        if (probe.report === undefined) {
-          // No report at all means the probe did not finish: print what it said, because
-          // a check that cannot say why it failed is barely a check.
-          console.error(`              no JSON report was written (${probe.reportError}).`);
-          console.error(`              probe stdout:\n${(probe.stdout ?? "").trim() || "(empty)"}`);
-          console.error(`              probe stderr:\n${(probe.stderr ?? "").trim() || "(empty)"}`);
-        } else {
-          console.error(`              recorded failures: ${recordedFailures.join(" | ") || "(none)"}`);
-          console.error(`              overflow selectors: ${offenders.map((entry) => entry.selector).join(", ") || "(none)"}`);
-        }
+        console.error(`              recorded failures: ${recordedFailures.join(" | ") || "(none)"}`);
+        console.error(`              overflow selectors: ${offenders.map((entry) => entry.selector).join(", ") || "(none)"}`);
       }
       console.log(`            ${regression.detail}\n`);
     } finally {

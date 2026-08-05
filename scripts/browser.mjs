@@ -157,7 +157,7 @@ async function connect(endpoint) {
 
 export async function launchBrowser(executablePath, profileDirectory, extraFlags = []) {
   if (typeof WebSocket === "undefined") {
-    throw new Error("This Node.js runtime has no global WebSocket; Node 22 or newer is required to capture screenshots.");
+    throw new Error("This Node.js runtime has no global WebSocket; Node 22 or newer is required to drive a browser.");
   }
 
   const isHeadlessShell = /headless[-_]shell/i.test(path.basename(executablePath));
@@ -229,6 +229,62 @@ async function openTarget(httpBase, url) {
     }
   }
   throw new Error(`Unable to open a DevTools target for ${url}.`);
+}
+
+/**
+ * Opens `url` at exactly `width` x `height` and hands back an evaluation handle, so
+ * callers can measure real layout in a real engine instead of guessing at it.
+ */
+export async function openPage(browser, { url, width, height }) {
+  const target = await openTarget(browser.httpBase, url);
+  const page = await connect(target.webSocketDebuggerUrl);
+
+  await page.send("Page.enable");
+  await page.send("Runtime.enable");
+  await page.send("Emulation.setDeviceMetricsOverride", {
+    width,
+    height,
+    deviceScaleFactor: 1,
+    mobile: false,
+    screenWidth: width,
+    screenHeight: height,
+  });
+
+  const evaluate = async (expression) => {
+    const evaluation = await page.send("Runtime.evaluate", {
+      expression,
+      returnByValue: true,
+      awaitPromise: true,
+    });
+    if (evaluation.exceptionDetails) {
+      const details = evaluation.exceptionDetails;
+      throw new Error(details.exception?.description ?? details.text ?? "Page evaluation threw.");
+    }
+    return evaluation.result?.value;
+  };
+
+  return {
+    evaluate,
+    async waitForReady(expression, timeoutMs = 30000) {
+      const deadline = Date.now() + timeoutMs;
+      let state;
+      do {
+        state = await evaluate(expression);
+        if (state?.error) {
+          throw new Error(`Probe page reported an error: ${state.error}`);
+        }
+        if (state?.ready) {
+          return state;
+        }
+        await delay(50);
+      } while (Date.now() < deadline);
+      throw new Error(`Page never reached the ready state: ${url}\n${JSON.stringify(state)}`);
+    },
+    async close() {
+      page.close();
+      await fetch(`${browser.httpBase}/json/close/${target.id}`).catch(() => undefined);
+    },
+  };
 }
 
 /**

@@ -2,7 +2,6 @@ name: CI
 
 on:
   push:
-    branches: [main]
   pull_request:
     branches: [main]
 
@@ -18,7 +17,9 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # The browser tooling in scripts/browser.mjs drives Chrome over the DevTools
+          # Protocol using the global WebSocket, which is only unflagged from Node 22.
+          node-version: 22
           cache: npm
       - name: Install locked dependencies
         run: npm ci
@@ -36,6 +37,17 @@ jobs:
         run: npm run package
       - name: Verify reproducible package
         run: npm run package:reproducible
+      # The layout probe renders the packaged bundle in real headless Chromium and
+      # measures every element against the visual root's clipped box. It has to run on a
+      # real engine: JSDOM has no layout, so every rectangle it reports is zero and a
+      # geometry assertion written against it can never fail. The runner resolves its own
+      # font files rather than replaying any local measurement - the visual sets no
+      # font-family on its SVG text, so it renders in the browser's default serif, which
+      # is Times New Roman on Windows and a metric-compatible substitute here.
+      - name: Probe layout against the clipped visual root
+        run: npm run layout-probe -- --skip-package
+      - name: Prove the layout fixes still fail without their patches
+        run: npm run prove-regressions
       - name: Audit dependencies
         run: npm audit
       - name: Audit AppSource submission assets

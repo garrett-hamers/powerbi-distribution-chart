@@ -14,6 +14,47 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import JSZip from "jszip";
 import { findBrowser, launchBrowser, openPage } from "./browser.mjs";
+import rules from "../tools/layout/rules.js";
+
+const {
+  evaluateRootContainment,
+  evaluateScrollExpectations,
+  evaluateStickyOffsets,
+  scrollOffsetsFor,
+} = rules;
+
+/**
+ * Drives one case's scroll regions through their full travel, re-measuring at each stop.
+ *
+ * Node chooses the offsets and issues the scrolls, so the schedule is the same unit-tested
+ * `scrollOffsetsFor` the tests exercise, rather than a second copy living in the page.
+ */
+async function walkScrollRegions(page, regions) {
+  const walks = [];
+  for (const region of regions) {
+    const offsets = scrollOffsetsFor(region.maxScrollTop);
+    const samples = [];
+    for (const offset of offsets) {
+      const response = await page.evaluate(
+        `window.__atlynProbe.scrollTo(${JSON.stringify(region.selector)}, ${offset})`,
+      );
+      if (!response?.ok) {
+        throw new Error(`Scrolling "${region.selector}" to ${offset} failed:\n${response?.error}`);
+      }
+      if (!response.result.found) {
+        throw new Error(
+          `Scroll region "${region.selector}" was reported by the measurement pass but could `
+          + "not be found when scrolling; the DOM changed underneath the walk.",
+        );
+      }
+      samples.push(response.result);
+    }
+    // Return the region to the top so one walk cannot perturb the next.
+    await page.evaluate(`window.__atlynProbe.scrollTo(${JSON.stringify(region.selector)}, 0)`);
+    walks.push({ ...region, offsets: samples });
+  }
+  return walks;
+}
 
 /**
  * Layout probe for the Atlyn Distribution visual.
@@ -177,6 +218,24 @@ const READY_EXPRESSION = `(() => ({
 const SCREEN_READER_ONLY = ["h2.atlyn-title", "table.atlyn-summary"];
 
 /**
+ * The scroll-time contract for this visual.
+ *
+ * Deliberately empty, and deliberately *declared* rather than inferred. Atlyn Distribution
+ * has no scroll containers: the root sets `overflow: hidden`, the chart is an SVG scaled
+ * to the viewport, and the accessible summary table is hidden with `clip-path` rather than
+ * put in a scrolling panel. Every one of the 80 probe cases confirms this - zero regions,
+ * zero travel.
+ *
+ * An empty list is not the same as no check. `evaluateScrollExpectations` fails on any
+ * region it was not told about, so the day someone adds a scrollable panel the probe stops
+ * and demands a scroll-time contract for it, instead of quietly finding a container it
+ * never scrolls. That is the failure mode this contract exists to prevent: a sibling
+ * repository detected a scroll container, never scrolled it, and left every scroll-time
+ * assertion as dead weight over a region with 24,467px of travel.
+ */
+const EXPECTED_SCROLL_REGIONS = [];
+
+/**
  * The gate.
  *
  * `overflow` is the generic check: any painted element whose box leaves the visual
@@ -196,13 +255,39 @@ function evaluateCase(result) {
     );
   }
 
-  // An absolutely positioned child of a static root resolves against the initial
-  // containing block and leaves the visual altogether.
-  if (result.overflow.absolutelyPositioned > 0 && result.overflow.rootPosition === "static") {
-    failures.push(
-      `the visual root is position: static while holding ${result.overflow.absolutelyPositioned} `
-      + "absolutely positioned descendant(s), which resolve against the initial containing block",
-    );
+  // Positioning triage: an unpositioned root holding absolute descendants, anything whose
+  // containing block sits outside the root, and z-index specified on an element that is
+  // not positioned at all.
+  failures.push(...evaluateRootContainment(result.positioning));
+
+  // The declared scroll-time contract. Fails on a region that vanished, a region that
+  // stopped overflowing, and a region nobody declared - rather than skipping when none
+  // are found.
+  failures.push(...evaluateScrollExpectations(result.scrollRegions, EXPECTED_SCROLL_REGIONS));
+
+  // Scroll-time re-walk: every offset the walk actually reached is measured again, so a
+  // defect that only appears part-way down a scrolling region cannot hide.
+  for (const walk of result.scrollWalks ?? []) {
+    for (const sample of walk.offsets) {
+      if (sample.overflow.overflowCount > 0) {
+        const worst = sample.overflow.overflows[0];
+        failures.push(
+          `${sample.overflow.overflowCount} element(s) escape the visual root at scroll `
+          + `offset ${sample.applied}px of ${walk.maxScrollTop}px in "${walk.selector}", `
+          + `worst ${worst.escape}px (${worst.selector})`,
+        );
+      }
+      if (sample.sticky.length > 1) {
+        failures.push(...evaluateStickyOffsets(sample.sticky).map((failure) => (
+          `at scroll offset ${sample.applied}px in "${walk.selector}": ${failure}`
+        )));
+      }
+    }
+  }
+
+  // Sticky elements at rest still have to be sane, even before anything scrolls.
+  if (result.sticky.length > 1) {
+    failures.push(...evaluateStickyOffsets(result.sticky).map((failure) => `at rest: ${failure}`));
   }
 
   const unexpected = result.overflow.clipPathRoots.filter((selector) => !SCREEN_READER_ONLY.includes(selector));
@@ -275,6 +360,7 @@ try {
       }
 
       const result = response.result;
+      result.scrollWalks = await walkScrollRegions(page, result.scrollRegions);
       const failures = evaluateCase(result);
       results.push({ ...probeCase, result, failures });
 
@@ -336,6 +422,47 @@ const worstOverall = results.reduce(
   (worst, entry) => Math.max(worst, entry.result.overflow.maxEscape),
   0,
 );
+
+// Positioning and scroll triage, summarised across every case. Reported unconditionally,
+// including when the counts are all zero: "no sticky anywhere, no scroll container
+// anywhere, root positioned in every case" is a real result about the shape of the visual,
+// and it is only trustworthy if the numbers behind it are printed rather than assumed.
+const rootPositions = [...new Set(results.map((entry) => entry.result.positioning.rootPosition))];
+const totals = results.reduce((sums, entry) => {
+  const positioning = entry.result.positioning;
+  sums.absolute += positioning.absoluteCount;
+  sums.fixed += positioning.fixedCount;
+  sums.sticky += positioning.stickyCount;
+  sums.escapees += positioning.escapees.length;
+  sums.zIndexOnUnpositioned += positioning.zIndexOnUnpositioned.length;
+  sums.scrollRegions += entry.result.scrollRegions.length;
+  sums.scrollSamples += (entry.result.scrollWalks ?? [])
+    .reduce((count, walk) => count + walk.offsets.length, 0);
+  sums.maxTravel = Math.max(
+    sums.maxTravel,
+    ...(entry.result.scrollWalks ?? []).map((walk) => walk.maxScrollTop),
+    0,
+  );
+  return sums;
+}, {
+  absolute: 0,
+  fixed: 0,
+  sticky: 0,
+  escapees: 0,
+  zIndexOnUnpositioned: 0,
+  scrollRegions: 0,
+  scrollSamples: 0,
+  maxTravel: 0,
+});
+
+log("Positioning and scroll triage");
+log(`  root computed position     : ${rootPositions.join(", ")}`);
+log(`  absolute / fixed / sticky  : ${totals.absolute} / ${totals.fixed} / ${totals.sticky}`);
+log(`  escaping containing block  : ${totals.escapees}`);
+log(`  z-index on unpositioned    : ${totals.zIndexOnUnpositioned}`);
+log(`  scroll regions (declared)  : ${totals.scrollRegions} (${EXPECTED_SCROLL_REGIONS.length})`);
+log(`  scroll offsets measured    : ${totals.scrollSamples}, max travel ${totals.maxTravel}px`);
+log("");
 log(`${results.length - failed}/${results.length} case(s) clean; worst escape ${worstOverall}px.`);
 
 if (failed > 0 && !reportOnly) {

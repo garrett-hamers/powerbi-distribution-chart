@@ -46,6 +46,13 @@ jobs:
       # is Times New Roman on Windows and a metric-compatible substitute here.
       - name: Probe layout against the clipped visual root
         run: npm run layout-probe -- --skip-package
+      # The probe's scroll walk and sticky rules never fire against this visual, because it
+      # has no scroll containers and no sticky elements. That is a real result, and it also
+      # leaves those rules unobserved - so they are pointed at DOM built to break them and
+      # required to notice. Machinery nobody has watched work is indistinguishable from
+      # machinery that cannot work.
+      - name: Prove the layout rules are live
+        run: npm run layout-selftest
       - name: Prove the layout fixes still fail without their patches
         run: npm run prove-regressions
       - name: Audit dependencies

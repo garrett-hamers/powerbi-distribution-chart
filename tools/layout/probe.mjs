@@ -1,5 +1,12 @@
 import { SCENARIOS } from "./scenarios.mjs";
-import { measureDataSurvival, measureOverflow } from "./measure.mjs";
+import {
+  findScrollRegions,
+  measureDataSurvival,
+  measureOverflow,
+  measurePositioning,
+  measureStickyOffsets,
+  scrollRegionTo,
+} from "./measure.mjs";
 
 /**
  * In-page driver for the layout probe.
@@ -179,6 +186,10 @@ function run(spec) {
 
   const overflow = measureOverflow(container, { view: window });
   const data = measureDataSurvival(container);
+  const positioning = measurePositioning(container, { view: window });
+  const scrollRegions = findScrollRegions(container, { view: window })
+    .map(({ element: _element, ...rest }) => rest);
+  const sticky = measureStickyOffsets(container, { view: window });
 
   return {
     id: spec.id,
@@ -189,6 +200,9 @@ function run(spec) {
     },
     overflow,
     data,
+    positioning,
+    scrollRegions,
+    sticky,
     dir: container.getAttribute("dir"),
     elementCount: container.querySelectorAll("*").length,
   };
@@ -198,6 +212,15 @@ window.__atlynProbe = {
   run: (spec) => {
     try {
       return { ok: true, result: run(spec) };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? `${error.message}\n${error.stack}` : String(error) };
+    }
+  },
+  // Node picks the offsets and drives the scrolling, so the schedule is unit tested
+  // rather than buried in the page.
+  scrollTo: (selector, offset) => {
+    try {
+      return { ok: true, result: scrollRegionTo(container, selector, offset, window) };
     } catch (error) {
       return { ok: false, error: error instanceof Error ? `${error.message}\n${error.stack}` : String(error) };
     }

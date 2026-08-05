@@ -30,6 +30,7 @@ npm run eslint
 npm run package
 npm run package:reproducible
 npm run layout-probe
+npm run layout-selftest
 npm run prove-regressions
 npm run release:metadata
 npm audit
@@ -61,6 +62,43 @@ hide.
 `npm run prove-regressions` reverts each layout fix in turn, repackages, and requires the
 probe to go red on the cases that fix governs. A fix that cannot be shown to fail without
 its patch is not proven, and this script fails if one stays green.
+
+### Positioning, scroll and sticky
+
+Every probe case also reports a positioning triage, because two whole defect classes are
+cheap to rule out and expensive to discover late:
+
+- an **absolutely positioned child of a `position: static` root** resolves against the
+  *initial containing block*. It escapes the root's `overflow: hidden` entirely and belongs
+  to the page rather than the visual, which an overflow walk scoped to the root cannot see,
+  because the element is no longer laid out relative to it at all.
+- **`position: sticky` inside a scrolling region** is the header-pinning bug: headers pin
+  to the same offset and collapse onto one another. At rest they lay out normally and look
+  perfect, so no at-rest assertion can catch it.
+
+Atlyn Distribution has neither. The root is set to `position: relative` unconditionally in
+the constructor, all 224 absolutely positioned elements across the matrix resolve to it,
+and there is no `position: sticky`, no `position: fixed` and no scroll container anywhere -
+the root sets `overflow: hidden`, the chart is an SVG scaled to the viewport, and the
+accessible summary table is hidden with `clip-path` rather than put in a scrolling panel.
+The probe prints those counts on every run rather than asserting cleanliness, so the claim
+stays checkable.
+
+Because those rules therefore never fire against the real visual, `npm run layout-selftest`
+points each one at a DOM built specifically to break it, in the same real Chromium, and
+requires it to produce the failure it exists to produce. Two of the seven fixtures are
+healthy rather than broken: a rule that also fires on correct layout would be as worthless
+as one that never fires. The rules themselves live in `tools/layout/rules.js` as pure
+functions over plain measurements, and `tests/layoutRules.test.ts` drives them with
+deliberately bad numbers - collapsed headers, regions that stopped scrolling, z-index read
+out of a stacking context that does not exist.
+
+The scroll walk is driven from Node: it picks each region's offsets with the same
+unit-tested `scrollOffsetsFor`, scrolls the region, and re-runs the full escape walk and
+the sticky measurement at every stop. The expected-region list is currently empty, which is
+a declared contract rather than a skip - `evaluateScrollExpectations` fails on any region
+nobody declared, so the day a scrollable panel is added the probe stops and asks for its
+scroll-time contract instead of quietly finding a container it never scrolls.
 
 Both run in CI on every push, on Node 22 - the probe drives Chrome over the DevTools
 Protocol using the global `WebSocket`, which is only unflagged from Node 22. The runner

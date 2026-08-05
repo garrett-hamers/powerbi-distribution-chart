@@ -138,12 +138,14 @@ const runProbe = (probeFilter) => {
     reportPath,
   ]);
   let report;
+  let reportError;
   try {
     report = JSON.parse(readFileSync(path.join(root, reportPath), "utf8"));
-  } catch {
+  } catch (error) {
     report = undefined;
+    reportError = error instanceof Error ? error.message : String(error);
   }
-  return { ...result, report };
+  return { ...result, report, reportError };
 };
 
 const original = readFileSync(sourcePath, "utf8");
@@ -171,6 +173,15 @@ try {
 
   for (const regression of selected) {
     const baseline = runProbe(regression.filter);
+    if (baseline.report === undefined) {
+      console.error(
+        `The layout probe did not complete while establishing the baseline for `
+        + `"${regression.id}" (exit ${baseline.status}, no JSON report: ${baseline.reportError}).\n`
+        + `probe stdout:\n${(baseline.stdout ?? "").trim() || "(empty)"}\n`
+        + `probe stderr:\n${(baseline.stderr ?? "").trim() || "(empty)"}`,
+      );
+      process.exit(1);
+    }
     if (baseline.status !== 0) {
       console.error(
         `Baseline probe for "${regression.id}" is already failing on ${regression.filter}. `
@@ -202,18 +213,47 @@ try {
     try {
       runPackage();
       const probe = runProbe(regression.filter);
-      const wentRed = probe.status !== 0;
-      const offenders = (probe.report?.cases ?? [])
-        .flatMap((entry) => entry.result.overflow.overflows);
-      const matched = offenders.find((entry) => entry.selector.includes(regression.expectSelector));
+      if (probe.report === undefined) {
+        // No report means the probe did not finish - a browser launch timeout, a page that
+        // never became ready, a crash. That is not the same as "this fix is unproven", and
+        // conflating the two would let an infrastructure failure masquerade as a verdict
+        // about the code. Fail loudly, with whatever the probe managed to say.
+        throw new Error([
+          `The layout probe did not complete while proving "${regression.id}" `
+          + `(exit ${probe.status}, no JSON report: ${probe.reportError}).`,
+          "This says nothing about the fix - the probe never produced a verdict.",
+          `probe stdout:\n${(probe.stdout ?? "").trim() || "(empty)"}`,
+          `probe stderr:\n${(probe.stderr ?? "").trim() || "(empty)"}`,
+        ].join("\n"));
+      }
 
-      if (wentRed && matched) {
+      const wentRed = probe.status !== 0;
+      const cases = probe.report.cases ?? [];
+      const offenders = cases.flatMap((entry) => entry.result.overflow.overflows);
+      // Match on everything the probe recorded, not just overflow selectors. A reversion
+      // can legitimately be caught by a non-overflow rule, and when the match fails the
+      // reason has to be printed rather than swallowed - "nothing matched" is not a
+      // diagnosis.
+      const recordedFailures = cases.flatMap((entry) => entry.failures ?? []);
+      const haystack = [
+        ...offenders.map((entry) => entry.selector),
+        ...recordedFailures,
+      ];
+      const matched = offenders.find((entry) => entry.selector.includes(regression.expectSelector));
+      const matchedText = haystack.some((text) => text.includes(regression.expectSelector));
+
+      if (wentRed && matchedText) {
         const worst = offenders.reduce((peak, entry) => Math.max(peak, entry.escape), 0);
         console.log(`    PROVEN  probe went red on ${regression.filter} (worst escape ${worst}px)`);
-        console.log(
-          `            ${matched.selector} escapes by ${matched.escape}px `
-          + `(l${matched.left} t${matched.top} r${matched.right} b${matched.bottom})`,
-        );
+        if (matched) {
+          console.log(
+            `            ${matched.selector} escapes by ${matched.escape}px `
+            + `(l${matched.left} t${matched.top} r${matched.right} b${matched.bottom})`,
+          );
+        } else {
+          const failure = recordedFailures.find((text) => text.includes(regression.expectSelector));
+          console.log(`            ${failure}`);
+        }
       } else if (!wentRed) {
         failures += 1;
         console.error(
@@ -224,9 +264,10 @@ try {
         failures += 1;
         console.error(
           `    UNPROVEN  probe went red on ${regression.filter} but nothing matching `
-          + `"${regression.expectSelector}" overflowed, so it failed for some other reason. `
-          + `Offenders: ${offenders.map((entry) => entry.selector).join(", ") || "(none recorded)"}`,
+          + `"${regression.expectSelector}" was reported, so it failed for some other reason.`,
         );
+        console.error(`              recorded failures: ${recordedFailures.join(" | ") || "(none)"}`);
+        console.error(`              overflow selectors: ${offenders.map((entry) => entry.selector).join(", ") || "(none)"}`);
       }
       console.log(`            ${regression.detail}\n`);
     } finally {

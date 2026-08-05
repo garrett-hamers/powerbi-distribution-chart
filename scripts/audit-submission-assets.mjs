@@ -585,6 +585,140 @@ await check("sample report has no dangling internal references", () => {
 });
 
 /**
+ * The `$schema` every committed sample file must declare.
+ *
+ * Taken from `powerbi-scatter-chart`, whose sample is the only one in the portfolio
+ * confirmed to open in Power BI Desktop, and which agrees with the fixed Control Chart on
+ * all nine. This project declared four different versions - three older, and
+ * `item/report/definitionProperties` *newer* at 2.0.0, pairing a v2 properties document
+ * with definition files the working references express as v2.1.0.
+ *
+ * Pinned here rather than left to schema validation, which cannot see this at all: a
+ * document is validated against whichever schema it names, and each of these schemas pins
+ * its own major version in a `$schema` pattern, so naming an older one is self-consistent
+ * by construction and validates cleanly. Nor does reference resolution catch it, since
+ * every path still resolves. Comparison against a known-good reference is a third kind of
+ * check, and it is the only one of the three that sees this.
+ */
+const EXPECTED_SCHEMAS = new Map([
+  [`${SAMPLE_SLUG}.pbip`, "pbip/pbipProperties/1.0.0"],
+  [`${SAMPLE_SLUG}.Report/.platform`, "gitIntegration/platformProperties/2.0.0"],
+  [`${SAMPLE_SLUG}.Report/definition.pbir`, "item/report/definitionProperties/1.0.0"],
+  [`${SAMPLE_SLUG}.Report/definition/report.json`, "item/report/definition/report/2.1.0"],
+  [`${SAMPLE_SLUG}.Report/definition/version.json`, "item/report/definition/versionMetadata/1.0.0"],
+  [`${SAMPLE_SLUG}.Report/definition/pages/pages.json`, "item/report/definition/pagesMetadata/1.1.0"],
+  [`${SAMPLE_SLUG}.SemanticModel/.platform`, "gitIntegration/platformProperties/2.0.0"],
+  [`${SAMPLE_SLUG}.SemanticModel/definition.pbism`, "item/semanticModel/definitionProperties/1.0.0"],
+]);
+
+/** Per-file-type expectations for the page and visual folders, whose names are generated. */
+const EXPECTED_SCHEMAS_BY_FILENAME = new Map([
+  ["page.json", "item/report/definition/page/2.1.0"],
+  ["visual.json", "item/report/definition/visualContainer/2.7.0"],
+]);
+
+const SCHEMA_PREFIX = "https://developer.microsoft.com/json-schemas/fabric/";
+
+await check("sample project declares the schema versions of the sample known to open", () => {
+  const samplesRoot = path.join(root, "samples");
+  const shortSchema = (value) => {
+    if (typeof value !== "string") {
+      return undefined;
+    }
+    if (!value.startsWith(SCHEMA_PREFIX) || !value.endsWith("/schema.json")) {
+      return value;
+    }
+    return value.slice(SCHEMA_PREFIX.length, -"/schema.json".length);
+  };
+
+  const problems = [];
+  const seen = new Set();
+
+  const declaredSchema = (absolute) => {
+    try {
+      return shortSchema(readJson(absolute).$schema);
+    } catch {
+      return undefined;
+    }
+  };
+
+  for (const [relativePath, expected] of EXPECTED_SCHEMAS) {
+    const absolute = path.join(samplesRoot, relativePath);
+    ensure(existsSync(absolute), `Sample project is missing ${relativePath}.`);
+    const actual = declaredSchema(absolute);
+    seen.add(relativePath);
+    if (actual !== expected) {
+      problems.push(`${relativePath} declares ${actual ?? "(none)"}, expected ${expected}`);
+    }
+  }
+
+  // Page and visual folder names are content-derived, so they are matched by file name.
+  const pagesRoot = path.join(samplesRoot, `${SAMPLE_SLUG}.Report`, "definition", "pages");
+  const walk = (directory) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const absolute = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        walk(absolute);
+        continue;
+      }
+      const expected = EXPECTED_SCHEMAS_BY_FILENAME.get(entry.name);
+      if (!expected) {
+        continue;
+      }
+      const actual = declaredSchema(absolute);
+      seen.add(relative(absolute));
+      if (actual !== expected) {
+        problems.push(`${relative(absolute)} declares ${actual ?? "(none)"}, expected ${expected}`);
+      }
+    }
+  };
+  walk(pagesRoot);
+
+  // Anything carrying a $schema that nobody pinned is reported rather than ignored: an
+  // unpinned file is one whose version can drift without anything noticing.
+  const unpinned = [];
+  const scan = (directory) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const absolute = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        scan(absolute);
+        continue;
+      }
+      if (!/\.(json|pbip|pbir|pbism)$/.test(entry.name) && entry.name !== ".platform") {
+        continue;
+      }
+      // The embedded visual is copied verbatim out of the packaged artifact.
+      if (absolute.includes(`${path.sep}CustomVisuals${path.sep}`)) {
+        continue;
+      }
+      const posixRelative = path.relative(samplesRoot, absolute).replaceAll("\\", "/");
+      if (seen.has(posixRelative) || seen.has(relative(absolute))) {
+        continue;
+      }
+      if (declaredSchema(absolute) !== undefined) {
+        unpinned.push(posixRelative);
+      }
+    }
+  };
+  scan(samplesRoot);
+
+  ensure(
+    unpinned.length === 0,
+    `Sample project declares a $schema in file(s) no expectation pins: ${unpinned.join(", ")}. `
+    + "Add them to EXPECTED_SCHEMAS rather than leaving their version free to drift.",
+  );
+
+  ensure(
+    problems.length === 0,
+    "Sample project declares schema versions that differ from the sample known to open in "
+    + "Power BI Desktop:\n"
+    + problems.map((problem) => `      ${problem}`).join("\n"),
+  );
+
+  return `${seen.size} declared schema version(s) match the reference sample`;
+});
+
+/**
  * The indentation the expression block under `source =` must start at.
  *
  * TMDL takes the *first* expression line's indentation as the baseline for the whole

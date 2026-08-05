@@ -13,6 +13,8 @@
     "eslint": "eslint .",
     "lint": "eslint .",
     "package": "node scripts/package.mjs",
+    "layout-probe": "node scripts/layout-probe.mjs",
+    "prove-regressions": "node scripts/prove-regressions.mjs",
     "package:certification": "node scripts/package.mjs --certification-audit",
     "package:reproducible": "node scripts/verify-reproducible-package.mjs",
     "release:metadata": "node scripts/release-metadata.mjs",

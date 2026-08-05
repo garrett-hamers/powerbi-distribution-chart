@@ -18,6 +18,28 @@ type SelectionId = powerbi.visuals.ISelectionId;
 const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
 const MAX_RENDERED_MARKERS_PER_DISTRIBUTION = 2000;
 
+/**
+ * Layout budget for the plot area.
+ *
+ * A Power BI tile clips with `overflow: hidden`, so any pixel the chart draws outside
+ * its own viewport is silently lost. Reserved bands therefore have to be a *preference*
+ * that shrinks, never a constant: a fixed 90px value gutter is 7% of a 1280px tile and
+ * 113% of an 80px one, and at the small end it pushes the entire plot off the canvas.
+ * `MAX_MARGIN_SHARE` caps what the reserved bands may take, which leaves the preferred
+ * values untouched on every tile wide enough to afford them.
+ */
+const PREFERRED_VALUE_GUTTER = 90;
+const PREFERRED_EDGE_MARGIN = 24;
+const MAX_MARGIN_SHARE = 0.55;
+
+/** The status band is chrome: it gets one line, or none at all on a tile this small. */
+const DIAGNOSTICS_BAND_HEIGHT = 22;
+const MIN_DIAGNOSTICS_WIDTH = 150;
+const MIN_DIAGNOSTICS_HEIGHT = 90;
+
+const ELLIPSIS = "\u2026";
+
+
 type StringKey =
   | "title"
   | "empty"
@@ -185,6 +207,165 @@ function isDataPointTarget(target: EventTarget | null): boolean {
   return target instanceof Element
     && Boolean(target.closest(".atlyn-category, .atlyn-observation, .atlyn-outlier"));
 }
+
+/**
+ * A request to make one SVG text run fit inside a width, resolved once the element is
+ * in the live document.
+ *
+ * SVG `<text>` neither wraps nor truncates. `text-overflow: ellipsis` does nothing to
+ * it - and would do nothing even on an HTML box unless `white-space: nowrap` were set
+ * alongside it, which is its own well-worn trap. The only way to bound an SVG text run
+ * is to measure it against the real font and rewrite the string, which means it has to
+ * happen after the element is attached and laid out.
+ */
+interface TextFit {
+  element: SVGTextElement;
+  maxWidth: number;
+  maxLines: number;
+  lineHeight: number;
+  /** When set, the block is centred vertically on this baseline instead of starting at it. */
+  centerOn?: number;
+  /**
+   * When set, the laid-out block is nudged up so its rendered box ends here.
+   *
+   * Baselines are placed from constants, but glyph extents come from whatever font the
+   * host happens to resolve - and a CI runner's font stack is not the developer's. This
+   * asks the engine where the text actually landed instead of guessing at ascent and
+   * descent ratios.
+   */
+  maxBottom?: number;
+}
+
+/**
+ * Word-wraps and ellipsizes `element` so it never exceeds `maxWidth`.
+ *
+ * Returns silently when the engine cannot measure text - JSDOM has no layout engine, so
+ * `getComputedTextLength` is absent there and any measurement would be a fabrication.
+ * The layout probe runs in real Chromium precisely because this is unmeasurable
+ * anywhere else.
+ */
+function fitSvgText(fit: TextFit): void {
+  layoutSvgText(fit);
+  clampTextBottom(fit);
+}
+
+/** Pulls a laid-out text block up until its measured box sits inside `maxBottom`. */
+function clampTextBottom(fit: TextFit): void {
+  if (fit.maxBottom === undefined) {
+    return;
+  }
+  const measurable = fit.element as SVGTextElement & { getBBox?: () => { y: number; height: number } };
+  if (typeof measurable.getBBox !== "function") {
+    return;
+  }
+  let box: { y: number; height: number };
+  try {
+    box = measurable.getBBox();
+  } catch {
+    // getBBox throws on elements that are not rendered; nothing to clamp in that case.
+    return;
+  }
+  const overshoot = box.y + box.height - fit.maxBottom;
+  if (overshoot <= 0) {
+    return;
+  }
+  const current = Number.parseFloat(fit.element.getAttribute("y") ?? "0");
+  fit.element.setAttribute("y", String(current - overshoot));
+}
+
+function layoutSvgText(fit: TextFit): void {
+  const { element, maxLines, lineHeight } = fit;
+  const measurable = element as SVGTextElement & { getComputedTextLength?: () => number };
+  if (typeof measurable.getComputedTextLength !== "function") {
+    return;
+  }
+
+  const source = (element.textContent ?? "").trim();
+  if (source.length === 0) {
+    return;
+  }
+
+  const maxWidth = fit.maxWidth;
+  if (maxWidth <= 1) {
+    element.textContent = "";
+    return;
+  }
+
+  const measure = (candidate: string): number => {
+    element.textContent = candidate;
+    return measurable.getComputedTextLength?.() ?? 0;
+  };
+
+  if (measure(source) <= maxWidth) {
+    element.textContent = source;
+    return;
+  }
+
+  /** Longest prefix of `text` that still fits once the ellipsis is appended. */
+  const truncate = (text: string): string => {
+    let low = 0;
+    let high = text.length;
+    while (low < high) {
+      const mid = Math.ceil((low + high) / 2);
+      if (measure(`${text.slice(0, mid).trimEnd()}${ELLIPSIS}`) <= maxWidth) {
+        low = mid;
+      } else {
+        high = mid - 1;
+      }
+    }
+    return low > 0 ? `${text.slice(0, low).trimEnd()}${ELLIPSIS}` : "";
+  };
+
+  const words = source.split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let index = 0;
+
+  while (index < words.length && lines.length < maxLines) {
+    const start = index;
+    const isLastLine = lines.length === maxLines - 1;
+    let current = "";
+
+    while (index < words.length) {
+      const candidate = current.length > 0 ? `${current} ${words[index]}` : words[index];
+      if (measure(candidate) > maxWidth) {
+        break;
+      }
+      current = candidate;
+      index += 1;
+    }
+
+    if (current.length === 0 || (isLastLine && index < words.length)) {
+      // Either the next word alone is wider than the line, or this is the last line we
+      // are allowed and there is still text left: everything from here gets ellipsized.
+      current = truncate(words.slice(start).join(" "));
+      index = words.length;
+    }
+
+    lines.push(current);
+  }
+
+  const rendered = lines.filter((line) => line.length > 0);
+  while (element.firstChild) {
+    element.removeChild(element.firstChild);
+  }
+
+  if (rendered.length <= 1) {
+    element.textContent = rendered[0] ?? "";
+  } else {
+    const x = element.getAttribute("x") ?? "0";
+    rendered.forEach((line, lineIndex) => {
+      const span = svgElement("tspan", { x, dy: lineIndex === 0 ? "0" : String(lineHeight) });
+      span.textContent = line;
+      element.appendChild(span);
+    });
+  }
+
+  if (fit.centerOn !== undefined) {
+    const blockHeight = Math.max(0, rendered.length - 1) * lineHeight;
+    element.setAttribute("y", String(fit.centerOn - blockHeight / 2));
+  }
+}
+
 
 export class Visual implements powerbi.extensibility.visual.IVisual {
   private readonly host: IVisualHost;
@@ -422,8 +603,8 @@ export class Visual implements powerbi.extensibility.visual.IVisual {
     this.root.classList.toggle("atlyn-mobile", options.viewport.width < 420);
     this.root.setAttribute("aria-label", `${this.t("title")}: ${this.diagnosticsLabel(model)}`);
     this.applyColors();
-    this.renderDiagnostics(model, dataView);
-    this.renderChart(model, options.viewport);
+    const diagnosticsVisible = this.renderDiagnostics(model, dataView, options.viewport);
+    this.renderChart(model, options.viewport, diagnosticsVisible);
     this.renderSummaryTable(model);
   }
 
@@ -461,26 +642,6 @@ export class Visual implements powerbi.extensibility.visual.IVisual {
     this.root.style.backgroundColor = background;
   }
 
-  private renderDiagnostics(model: DistributionModel, dataView: powerbi.DataView | undefined): void {
-    while (this.diagnostics.firstChild) {
-      this.diagnostics.removeChild(this.diagnostics.firstChild);
-    }
-    const text = document.createElement("span");
-    text.textContent = !dataView || model.distributions.length === 0
-      ? this.t("empty")
-      : this.diagnosticsLabel(model);
-    this.diagnostics.appendChild(text);
-    this.diagnostics.style.position = "absolute";
-    this.diagnostics.style.left = "8px";
-    this.diagnostics.style.right = "8px";
-    this.diagnostics.style.top = "4px";
-    this.diagnostics.style.font = "11px sans-serif";
-    this.diagnostics.style.zIndex = "2";
-    this.diagnostics.style.pointerEvents = "none";
-    this.diagnostics.style.color = "var(--atlyn-foreground)";
-    this.diagnostics.setAttribute("aria-label", text.textContent);
-  }
-
   private diagnosticsLabel(model: DistributionModel): string {
     const diagnostics = model.diagnostics;
     const formatCount = (value: number): string => new Intl.NumberFormat(this.locale).format(value);
@@ -496,15 +657,113 @@ export class Visual implements powerbi.extensibility.visual.IVisual {
       .replace("{1}", formatCount(diagnostics.receivedRows));
   }
 
-  private renderChart(model: DistributionModel, viewport: powerbi.IViewport): void {
+  /**
+   * Renders the row-count status band.
+   *
+   * The band is chrome, so it degrades before anything else does. It is capped at a
+   * single ellipsized line, and dropped entirely on a tile too small to carry one
+   * usefully. Nothing is lost by dropping it: the same sentence stays in the root's
+   * accessible name, in every tooltip, and beside the numbers in the summary table.
+   *
+   * @returns whether the band was rendered, so the chart can reclaim the space.
+   */
+  private renderDiagnostics(
+    model: DistributionModel,
+    dataView: powerbi.DataView | undefined,
+    viewport: powerbi.IViewport,
+  ): boolean {
+    while (this.diagnostics.firstChild) {
+      this.diagnostics.removeChild(this.diagnostics.firstChild);
+    }
+
+    const visible = viewport.width >= MIN_DIAGNOSTICS_WIDTH && viewport.height >= MIN_DIAGNOSTICS_HEIGHT;
+    this.diagnostics.style.display = visible ? "block" : "none";
+    this.root.classList.toggle("atlyn-compact", !visible);
+    if (!visible) {
+      return false;
+    }
+
+    const label = !dataView || model.distributions.length === 0
+      ? this.t("empty")
+      : this.diagnosticsLabel(model);
+
+    const text = document.createElement("span");
+    text.textContent = label;
+    // `text-overflow: ellipsis` is inert on its own - it needs `white-space: nowrap`
+    // beside it, and it needs a block box with `overflow: hidden` to clip against.
+    // The span is made a block for exactly that reason, which also keeps its own border
+    // box inside the band instead of letting an inline run measure wider than its parent.
+    text.style.display = "block";
+    text.style.maxWidth = "100%";
+    text.style.whiteSpace = "nowrap";
+    text.style.overflow = "hidden";
+    text.style.textOverflow = "ellipsis";
+    this.diagnostics.appendChild(text);
+
+    this.diagnostics.style.position = "absolute";
+    this.diagnostics.style.left = "8px";
+    this.diagnostics.style.right = "8px";
+    this.diagnostics.style.top = "4px";
+    this.diagnostics.style.maxHeight = `${DIAGNOSTICS_BAND_HEIGHT - 4}px`;
+    this.diagnostics.style.overflow = "hidden";
+    this.diagnostics.style.font = "11px sans-serif";
+    this.diagnostics.style.zIndex = "2";
+    this.diagnostics.style.pointerEvents = "none";
+    this.diagnostics.style.color = "var(--atlyn-foreground)";
+    this.diagnostics.setAttribute("aria-label", label);
+    return true;
+  }
+
+  /**
+   * Reserved bands around the plot.
+   *
+   * Every band is a preference that shrinks rather than a constant. On any tile wide or
+   * tall enough to afford them the preferred values come through untouched, which keeps
+   * large-tile layout byte-identical; below that they scale down together so the plot
+   * area can never collapse or, worse, be pushed off the canvas entirely.
+   */
+  private chartMargin(
+    viewport: powerbi.IViewport,
+    diagnosticsVisible: boolean,
+  ): { top: number; right: number; bottom: number; left: number } {
+    const preferredHorizontal = PREFERRED_VALUE_GUTTER + PREFERRED_EDGE_MARGIN;
+    const horizontalScale = Math.min(1, (viewport.width * MAX_MARGIN_SHARE) / preferredHorizontal);
+    const gutter = Math.max(6, PREFERRED_VALUE_GUTTER * horizontalScale);
+    const edge = Math.max(4, PREFERRED_EDGE_MARGIN * horizontalScale);
+
+    const preferredBottom = viewport.height < 180 ? 42 : 58;
+    const bottom = Math.min(preferredBottom, Math.max(18, viewport.height * 0.34));
+    const top = diagnosticsVisible
+      ? Math.min(30, Math.max(DIAGNOSTICS_BAND_HEIGHT, viewport.height * 0.34))
+      : Math.max(4, Math.min(30, viewport.height * 0.08));
+
+    return {
+      top,
+      right: this.rtl ? gutter : edge,
+      bottom,
+      left: this.rtl ? edge : gutter,
+    };
+  }
+
+  private renderChart(
+    model: DistributionModel,
+    viewport: powerbi.IViewport,
+    diagnosticsVisible: boolean,
+  ): void {
     while (this.svg.firstChild) {
       this.svg.removeChild(this.svg.firstChild);
     }
     this.svg.setAttribute("viewBox", `0 0 ${Math.max(1, viewport.width)} ${Math.max(1, viewport.height)}`);
     this.svg.setAttribute("direction", this.rtl ? "rtl" : "ltr");
 
+    // Text runs are measured and trimmed once everything is attached: SVG text cannot be
+    // measured before it is in the document, and cannot be measured at all without a
+    // layout engine.
+    const fits: TextFit[] = [];
+
     if (model.distributions.length === 0) {
       const emptyText = svgElement("text", {
+        class: "atlyn-empty-label",
         x: String(viewport.width / 2),
         y: String(Math.max(24, viewport.height / 2)),
         "text-anchor": "middle",
@@ -513,15 +772,18 @@ export class Visual implements powerbi.extensibility.visual.IVisual {
       });
       emptyText.textContent = this.t("empty");
       this.svg.appendChild(emptyText);
+      fits.push({
+        element: emptyText,
+        maxWidth: Math.max(0, viewport.width - 12),
+        maxLines: Math.max(1, Math.min(4, Math.floor((viewport.height - 16) / 16))),
+        lineHeight: 16,
+        centerOn: Math.max(24, viewport.height / 2),
+      });
+      fits.forEach(fitSvgText);
       return;
     }
 
-    const margin = {
-      top: 30,
-      right: this.rtl ? 90 : 24,
-      bottom: viewport.height < 180 ? 42 : 58,
-      left: this.rtl ? 24 : 90,
-    };
+    const margin = this.chartMargin(viewport, diagnosticsVisible);
     const plotWidth = Math.max(1, viewport.width - margin.left - margin.right);
     const plotHeight = Math.max(1, viewport.height - margin.top - margin.bottom);
     const values = model.distributions.flatMap((distribution) => (
@@ -552,8 +814,10 @@ export class Visual implements powerbi.extensibility.visual.IVisual {
     model.distributions.forEach((distribution, index) => {
       const visualIndex = this.rtl ? model.distributions.length - 1 - index : index;
       const center = margin.left + categoryWidth * (visualIndex + 0.5);
-      this.renderCategory(distribution, center, categoryWidth, y, margin.top, plotHeight);
+      this.renderCategory(distribution, center, categoryWidth, y, margin.top, plotHeight, viewport, fits);
     });
+
+    fits.forEach(fitSvgText);
   }
 
   private renderCategory(
@@ -563,6 +827,8 @@ export class Visual implements powerbi.extensibility.visual.IVisual {
     y: (value: number) => number,
     top: number,
     plotHeight: number,
+    viewport: powerbi.IViewport,
+    fits: TextFit[],
   ): void {
     const categorySelected = distribution.selected
       || distribution.observations.some((observation) => observation.selected);
@@ -609,29 +875,52 @@ export class Visual implements powerbi.extensibility.visual.IVisual {
       distribution.categorySelectionId ?? distribution.observations[0]?.selectionId,
     );
 
+    // The widest half-extent any glyph in this category may occupy without leaving the
+    // tile. Every "comfortable minimum" below is capped by it: a 36px touch target and a
+    // 28px box are sensible defaults and impossible demands at the same time, depending
+    // on the tile, and a floor that cannot shrink is exactly how content ends up outside
+    // a clipped root.
+    const slotHalf = Math.max(
+      1,
+      Math.min(categoryWidth * 0.5, center - 1, viewport.width - center - 1),
+    );
+
+    const hitHalf = Math.min(Math.max(18, categoryWidth * 0.48), slotHalf);
     const hitArea = svgElement("rect", {
-      x: String(center - Math.max(18, categoryWidth * 0.48)),
+      x: String(center - hitHalf),
       y: String(top),
-      width: String(Math.max(36, categoryWidth * 0.96)),
+      width: String(hitHalf * 2),
       height: String(plotHeight),
       fill: "transparent",
       "aria-hidden": "true",
     });
     group.appendChild(hitArea);
 
+    const labelSize = this.root.classList.contains("atlyn-mobile")
+      ? Math.min(11, this.labelSize)
+      : this.labelSize;
     const label = svgElement("text", {
+      class: "atlyn-category-label",
       x: String(center),
       y: String(top + plotHeight + 26),
       "text-anchor": "middle",
       fill: "currentColor",
-      "font-size": String(this.root.classList.contains("atlyn-mobile") ? Math.min(11, this.labelSize) : this.labelSize),
+      "font-size": String(labelSize),
       direction: this.rtl ? "rtl" : "ltr",
     });
     label.textContent = distribution.category;
     group.appendChild(label);
+    fits.push({
+      element: label,
+      maxWidth: Math.max(0, slotHalf * 2 - 2),
+      maxLines: 1,
+      lineHeight: labelSize * 1.2,
+      maxBottom: viewport.height - 1,
+    });
 
     if (!distribution.statistics) {
       const stateText = svgElement("text", {
+        class: "atlyn-state-label",
         x: String(center),
         y: String(top + plotHeight / 2),
         "text-anchor": "middle",
@@ -640,12 +929,19 @@ export class Visual implements powerbi.extensibility.visual.IVisual {
       });
       stateText.textContent = distribution.state === "invalid" ? this.t("invalid") : this.t("noData");
       group.appendChild(stateText);
+      fits.push({
+        element: stateText,
+        maxWidth: Math.max(0, slotHalf * 2 - 2),
+        maxLines: Math.max(1, Math.min(3, Math.floor(plotHeight / 14))),
+        lineHeight: 13,
+        centerOn: top + plotHeight / 2,
+      });
       this.svg.appendChild(group);
       return;
     }
 
     const stats = distribution.statistics;
-    const boxWidth = Math.min(64, Math.max(28, categoryWidth * 0.55));
+    const boxWidth = Math.min(64, Math.max(28, categoryWidth * 0.55), slotHalf * 2);
     const box = svgElement("rect", {
       class: "atlyn-box",
       x: String(center - boxWidth / 2),
@@ -686,8 +982,13 @@ export class Visual implements powerbi.extensibility.visual.IVisual {
       "stroke-width": "3",
     }));
 
+    // The mean cross, the observation dots and the outlier dots all carry their own
+    // minimum sizes. Each is capped by the slot so a comfortable default on a large tile
+    // cannot become an escaping glyph on a small one.
+    const meanHalf = Math.max(1, Math.min(this.markerSize, slotHalf - 1));
+    const meanY = y(stats.mean);
     const meanMarker = svgElement("path", {
-      d: `M ${center - this.markerSize} ${y(stats.mean) - this.markerSize} L ${center + this.markerSize} ${y(stats.mean) + this.markerSize} M ${center + this.markerSize} ${y(stats.mean) - this.markerSize} L ${center - this.markerSize} ${y(stats.mean) + this.markerSize}`,
+      d: `M ${center - meanHalf} ${meanY - meanHalf} L ${center + meanHalf} ${meanY + meanHalf} M ${center + meanHalf} ${meanY - meanHalf} L ${center - meanHalf} ${meanY + meanHalf}`,
       stroke: "var(--atlyn-foreground)",
       "stroke-width": "2",
       "aria-label": `${this.t("mean")}: ${this.formatNumber(stats.mean, distribution.valueFormat)}`,
@@ -700,18 +1001,19 @@ export class Visual implements powerbi.extensibility.visual.IVisual {
       .filter((observation) => observation.highlighted || observation.selected)
       .slice(0, MAX_RENDERED_MARKERS_PER_DISTRIBUTION)
       .forEach((observation, observationIndex) => {
-        this.renderObservationMarker(group, distribution, observation, center, y, boxWidth, observationIndex);
+        this.renderObservationMarker(group, distribution, observation, center, y, boxWidth, observationIndex, slotHalf);
       });
 
     if (this.showOutliers) {
       distribution.outliers
         .slice(0, MAX_RENDERED_MARKERS_PER_DISTRIBUTION)
         .forEach((outlier, outlierIndex) => {
-          this.renderOutlier(group, distribution, outlier, center, y, boxWidth, outlierIndex);
+          this.renderOutlier(group, distribution, outlier, center, y, boxWidth, outlierIndex, slotHalf);
         });
     }
 
     const stateText = distribution.state === "small-sample" ? svgElement("text", {
+      class: "atlyn-state-label",
       x: String(center),
       y: String(top + 12),
       "text-anchor": "middle",
@@ -721,6 +1023,12 @@ export class Visual implements powerbi.extensibility.visual.IVisual {
     if (stateText) {
       stateText.textContent = this.t("smallSample");
       group.appendChild(stateText);
+      fits.push({
+        element: stateText,
+        maxWidth: Math.max(0, slotHalf * 2 - 2),
+        maxLines: Math.max(1, Math.min(3, Math.floor(plotHeight / 12))),
+        lineHeight: 11,
+      });
     }
     this.svg.appendChild(group);
   }
@@ -733,8 +1041,10 @@ export class Visual implements powerbi.extensibility.visual.IVisual {
     y: (value: number) => number,
     boxWidth: number,
     observationIndex: number,
+    slotHalf: number,
   ): void {
     const jitter = ((observation.originalIndex * 13 + observationIndex * 7) % 7 - 3) * Math.min(3, boxWidth / 12);
+    const radius = Math.max(1, Math.min(Math.max(this.markerSize + 3, 8), slotHalf - Math.abs(jitter) - 1));
     const marker = svgElement("circle", {
       class: [
         "atlyn-observation",
@@ -743,7 +1053,7 @@ export class Visual implements powerbi.extensibility.visual.IVisual {
       ].filter(Boolean).join(" "),
       cx: String(center + jitter),
       cy: String(y(observation.value)),
-      r: String(Math.max(this.markerSize + 3, 8)),
+      r: String(radius),
       fill: observation.selected ? "var(--atlyn-selected)" : "var(--atlyn-background)",
       "fill-opacity": observation.selected ? "0.2" : "1",
       stroke: observation.selected ? "var(--atlyn-selected)" : "var(--atlyn-foreground)",
@@ -788,10 +1098,11 @@ export class Visual implements powerbi.extensibility.visual.IVisual {
     y: (value: number) => number,
     boxWidth: number,
     outlierIndex: number,
+    slotHalf: number,
   ): void {
     const jitter = ((outlier.originalIndex * 17 + outlierIndex * 11) % 7 - 3) * Math.min(3, boxWidth / 12);
     const x = center + jitter;
-    const radius = Math.max(this.markerSize, 5);
+    const radius = Math.max(1, Math.min(Math.max(this.markerSize, 5), slotHalf - Math.abs(jitter) - 1));
     const marker = this.host.colorPalette?.isHighContrast === true
       ? svgElement("path", {
         d: `M ${x} ${y(outlier.value) - radius} L ${x + radius} ${y(outlier.value)} L ${x} ${y(outlier.value) + radius} L ${x - radius} ${y(outlier.value)} Z`,

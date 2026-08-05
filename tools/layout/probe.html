@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Atlyn Distribution - layout probe</title>
+    <style>
+      /*
+        The probe models a Power BI tile and nothing else: a fixed-size box with
+        `overflow: hidden`, exactly like the host chrome the visual is dropped into.
+        No padding, no borders, no fonts of our own - anything the visual needs it has
+        to bring itself, because that is all it gets in a real report.
+      */
+      html, body {
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        background: #ffffff;
+      }
+      #tile {
+        position: relative;
+        overflow: hidden;
+        background: #ffffff;
+      }
+      #visual {
+        width: 100%;
+        height: 100%;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="tile"><div id="visual"></div></div>
+    <script>
+      // The packaged bundle registers itself into window.powerbi.visuals.plugins
+      // when a host object already exists, so install the shim before loading it.
+      window.powerbi = window.powerbi || { visuals: { plugins: {} } };
+    </script>
+    <script src="/visual.js"></script>
+    <script type="module" src="./probe.mjs"></script>
+  </body>
+</html>

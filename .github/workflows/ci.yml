@@ -2,7 +2,6 @@ name: CI
 
 on:
   push:
-    branches: [main]
   pull_request:
     branches: [main]
 
@@ -36,6 +35,16 @@ jobs:
         run: npm run package
       - name: Verify reproducible package
         run: npm run package:reproducible
+      # The layout probe renders the packaged bundle in real headless Chromium and
+      # measures every element against the visual root's clipped box. It has to run on a
+      # real engine: JSDOM has no layout, so every rectangle it reports is zero and a
+      # geometry assertion written against it can never fail. The Linux runner also
+      # resolves a different font stack from a developer's Windows machine, so text
+      # metrics here are genuinely different numbers, not a replay of local ones.
+      - name: Probe layout against the clipped visual root
+        run: npm run layout-probe -- --skip-package
+      - name: Prove the layout fixes still fail without their patches
+        run: npm run prove-regressions
       - name: Audit dependencies
         run: npm audit
       - name: Audit AppSource submission assets

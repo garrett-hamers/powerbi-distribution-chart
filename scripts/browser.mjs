@@ -232,6 +232,62 @@ async function openTarget(httpBase, url) {
 }
 
 /**
+ * Opens `url` at exactly `width` x `height` and hands back an evaluation handle, so
+ * callers can measure real layout in a real engine instead of guessing at it.
+ */
+export async function openPage(browser, { url, width, height }) {
+  const target = await openTarget(browser.httpBase, url);
+  const page = await connect(target.webSocketDebuggerUrl);
+
+  await page.send("Page.enable");
+  await page.send("Runtime.enable");
+  await page.send("Emulation.setDeviceMetricsOverride", {
+    width,
+    height,
+    deviceScaleFactor: 1,
+    mobile: false,
+    screenWidth: width,
+    screenHeight: height,
+  });
+
+  const evaluate = async (expression) => {
+    const evaluation = await page.send("Runtime.evaluate", {
+      expression,
+      returnByValue: true,
+      awaitPromise: true,
+    });
+    if (evaluation.exceptionDetails) {
+      const details = evaluation.exceptionDetails;
+      throw new Error(details.exception?.description ?? details.text ?? "Page evaluation threw.");
+    }
+    return evaluation.result?.value;
+  };
+
+  return {
+    evaluate,
+    async waitForReady(expression, timeoutMs = 30000) {
+      const deadline = Date.now() + timeoutMs;
+      let state;
+      do {
+        state = await evaluate(expression);
+        if (state?.error) {
+          throw new Error(`Probe page reported an error: ${state.error}`);
+        }
+        if (state?.ready) {
+          return state;
+        }
+        await delay(50);
+      } while (Date.now() < deadline);
+      throw new Error(`Page never reached the ready state: ${url}\n${JSON.stringify(state)}`);
+    },
+    async close() {
+      page.close();
+      await fetch(`${browser.httpBase}/json/close/${target.id}`).catch(() => undefined);
+    },
+  };
+}
+
+/**
  * Renders `url` at exactly `width` x `height` and returns the PNG bytes plus whatever
  * `readyExpression` evaluated to, so callers can prove the page really rendered.
  */

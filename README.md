@@ -29,11 +29,42 @@ npm run build
 npm run eslint
 npm run package
 npm run package:reproducible
+npm run layout-probe
+npm run prove-regressions
 npm run release:metadata
 npm audit
 npm run audit:submission
 npm run certification-audit
 ```
+
+## Layout probe
+
+A Power BI custom visual renders inside a host tile with `overflow: hidden`. Content
+pushed outside that tile is silently clipped: it does not scroll, and nothing tells the
+report author that anything is missing. Unit tests cannot see this. JSDOM has no layout
+engine, so `getBoundingClientRect()` returns zero for everything and a geometry
+assertion written against it is not weak but *vacuous* - it can never fail.
+
+`npm run layout-probe` therefore packages the visual, extracts the bundle the host
+actually executes out of the `.pbiviz`, and renders it in real headless Chromium across
+80 cases: five tile sizes (1280x620, 398x298, 258x198, 178x138, 80x80) crossed with the
+formatting toggles in their default and non-default states, both writing directions, high
+contrast, and nine data scenarios including long labels, twelve narrow categories, the
+cross-highlight path and the empty and invalid states. Every element under the visual
+root is measured against the root's box. Three exemptions apply, each reported rather
+than hidden: descendants of a real scroll container, anything not painted at all, and
+anything clipped to zero area by `clip-path` - the screen-reader-only idiom, which this
+visual needs because `overflow` is inert on a `display: table` box. The elements allowed
+to claim that last exemption are pinned, so it cannot grow into a place where defects
+hide.
+
+`npm run prove-regressions` reverts each layout fix in turn, repackages, and requires the
+probe to go red on the cases that fix governs. A fix that cannot be shown to fail without
+its patch is not proven, and this script fails if one stays green.
+
+Both run in CI on every push. The Linux runner resolves a different font stack from a
+developer's Windows machine, so its text metrics are genuinely different numbers rather
+than a replay of local ones.
 
 ## Release artifacts
 

@@ -138,12 +138,14 @@ const runProbe = (probeFilter) => {
     reportPath,
   ]);
   let report;
+  let reportError;
   try {
     report = JSON.parse(readFileSync(path.join(root, reportPath), "utf8"));
-  } catch {
+  } catch (error) {
     report = undefined;
+    reportError = error instanceof Error ? error.message : String(error);
   }
-  return { ...result, report };
+  return { ...result, report, reportError };
 };
 
 const original = readFileSync(sourcePath, "utf8");
@@ -203,17 +205,32 @@ try {
       runPackage();
       const probe = runProbe(regression.filter);
       const wentRed = probe.status !== 0;
-      const offenders = (probe.report?.cases ?? [])
-        .flatMap((entry) => entry.result.overflow.overflows);
+      const cases = probe.report?.cases ?? [];
+      const offenders = cases.flatMap((entry) => entry.result.overflow.overflows);
+      // Match on everything the probe recorded, not just overflow selectors. A reversion
+      // can legitimately be caught by a non-overflow rule, and when the match fails the
+      // reason has to be printed rather than swallowed - "nothing matched" is not a
+      // diagnosis.
+      const recordedFailures = cases.flatMap((entry) => entry.failures ?? []);
+      const haystack = [
+        ...offenders.map((entry) => entry.selector),
+        ...recordedFailures,
+      ];
       const matched = offenders.find((entry) => entry.selector.includes(regression.expectSelector));
+      const matchedText = haystack.some((text) => text.includes(regression.expectSelector));
 
-      if (wentRed && matched) {
+      if (wentRed && matchedText) {
         const worst = offenders.reduce((peak, entry) => Math.max(peak, entry.escape), 0);
         console.log(`    PROVEN  probe went red on ${regression.filter} (worst escape ${worst}px)`);
-        console.log(
-          `            ${matched.selector} escapes by ${matched.escape}px `
-          + `(l${matched.left} t${matched.top} r${matched.right} b${matched.bottom})`,
-        );
+        if (matched) {
+          console.log(
+            `            ${matched.selector} escapes by ${matched.escape}px `
+            + `(l${matched.left} t${matched.top} r${matched.right} b${matched.bottom})`,
+          );
+        } else {
+          const failure = recordedFailures.find((text) => text.includes(regression.expectSelector));
+          console.log(`            ${failure}`);
+        }
       } else if (!wentRed) {
         failures += 1;
         console.error(
@@ -224,9 +241,18 @@ try {
         failures += 1;
         console.error(
           `    UNPROVEN  probe went red on ${regression.filter} but nothing matching `
-          + `"${regression.expectSelector}" overflowed, so it failed for some other reason. `
-          + `Offenders: ${offenders.map((entry) => entry.selector).join(", ") || "(none recorded)"}`,
+          + `"${regression.expectSelector}" was reported, so it failed for some other reason.`,
         );
+        if (probe.report === undefined) {
+          // No report at all means the probe did not finish: print what it said, because
+          // a check that cannot say why it failed is barely a check.
+          console.error(`              no JSON report was written (${probe.reportError}).`);
+          console.error(`              probe stdout:\n${(probe.stdout ?? "").trim() || "(empty)"}`);
+          console.error(`              probe stderr:\n${(probe.stderr ?? "").trim() || "(empty)"}`);
+        } else {
+          console.error(`              recorded failures: ${recordedFailures.join(" | ") || "(none)"}`);
+          console.error(`              overflow selectors: ${offenders.map((entry) => entry.selector).join(", ") || "(none)"}`);
+        }
       }
       console.log(`            ${regression.detail}\n`);
     } finally {

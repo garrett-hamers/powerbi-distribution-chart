@@ -43,6 +43,8 @@ jobs:
       - name: Run certification audit
         run: npm run certification-audit
       - name: Record packaged artifact checksum
+        env:
+          COMMIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
           count=$(find dist -maxdepth 1 -name '*.pbiviz' | wc -l)
@@ -62,16 +64,18 @@ jobs:
             echo "| File | \`$(basename "$file")\` |"
             echo "| Bytes | $bytes |"
             echo "| SHA-256 | \`$sha\` |"
-            echo "| Commit | \`$GITHUB_SHA\` |"
+            echo "| Commit | \`$COMMIT_SHA\` |"
             echo ""
-            echo "Download the \`pbiviz-$GITHUB_SHA\` artifact from this run and upload the"
+            echo "Download the \`pbiviz-$COMMIT_SHA\` artifact from this run and upload the"
             echo "\`.pbiviz\` inside it. The SHA-256 above is of the \`.pbiviz\` itself, not of"
             echo "the ZIP that GitHub wraps around downloaded artifacts."
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Upload packaged visual
         uses: actions/upload-artifact@v4
         with:
-          name: pbiviz-${{ github.sha }}
+          # On pull_request, github.sha is the synthetic merge commit, which appears
+          # nowhere else. Name the artifact after the real commit that was built.
+          name: pbiviz-${{ github.event.pull_request.head.sha || github.sha }}
           path: dist/*.pbiviz
           retention-days: 90
           if-no-files-found: error

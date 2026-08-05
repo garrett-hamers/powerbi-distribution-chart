@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Publish the built `.pbiviz` from CI as a downloadable `pbiviz-<commit-sha>` artifact, retained 90 days, and print its filename, byte count, and SHA-256 to the run log and run summary. The run that verified a commit is now the unambiguous source of the binary to submit, and the checksum is recoverable without downloading anything. `docs/partner-center-submission.md` records it as the canonical binary and notes that the SHA-256 is of the `.pbiviz` inside the ZIP GitHub wraps around downloaded artifacts.
+- Make confirming the sample report renders **with data** an explicit step in the `.pbix` procedure, before **File > Save As**, with **Home > Refresh > Schema and data** as the fix if any table is empty or Desktop reports incomplete data. The committed project carries no cached model data, and saving while the tables are empty ships a `.pbix` with no data, which fails AppSource review. Documented in `docs/partner-center-submission.md` section 4.1, the generated `samples/README.md`, and the `npm run audit:submission` operator output, together with the check that a credential prompt at any point means something external has entered the semantic model. Whether Power BI Desktop evaluates this DAX calculated table on open is untested and is deliberately not asserted either way - the wording is correct whichever it does.
+- Correct the claim that the calculated table has "nothing to refresh". It has no data source to authenticate against or connect to, but it still has to be evaluated before it holds rows.
+- Fail the dependency audit on any advisory, not just high and critical. `npm run audit` and the CI step now run a plain `npm audit`, matching the other five visuals in the portfolio; `--audit-level=high` had been masking a moderate advisory the rest of the portfolio already fails on. `npm run audit:production` keeps `--omit=dev` but drops the same threshold, so it differs from `npm run audit` only in scope.
+- Pin `hono` to `^4.12.34` through `overrides` to clear GHSA-8j4g-w8fx-2239, a ReDoS in hono's CORS middleware reached transitively through `powerbi-visuals-tools`.
+
 ## 1.0.1
 
 Prepares the visual for its Microsoft AppSource / Partner Center submission.

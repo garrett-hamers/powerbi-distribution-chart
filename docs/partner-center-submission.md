@@ -37,9 +37,21 @@ still has to do by hand.
 | Build command | `npm run package` |
 | Reproducibility gate | `npm run package:reproducible` (packages twice, requires identical filename, byte count, and SHA-256) |
 | Release manifest | `npm run release:metadata` -> `dist/release-metadata.json` |
+| **Canonical binary** | the `pbiviz-<commit-sha>` artifact published by the CI run for the submitted commit |
 
-Upload the exact `.pbiviz` recorded in `dist/release-metadata.json`. Do not
-regenerate it between recording the manifest and uploading.
+**Upload CI's binary, not a local build.** Every CI run publishes the built
+`.pbiviz` as a downloadable artifact named `pbiviz-<commit-sha>`, and prints its
+filename, byte count, and SHA-256 to the run log and the run summary. Taking the
+binary from the run that verified the commit removes any question about which
+build was submitted. A local `npm run package` on this repository has matched CI
+byte-for-byte - the packaged text assets are pinned to LF in `.gitattributes`
+precisely so that holds - but the artifact is still the unambiguous source, and
+the checksum is recoverable from the run without downloading anything.
+
+GitHub wraps downloaded artifacts in a ZIP. The recorded SHA-256 is of the
+`.pbiviz` **inside** it, not of the ZIP.
+
+Do not regenerate the package between recording the checksum and uploading.
 
 > **v1.0.1.0 supersedes the v1.0.0.0 artifact currently in Blob storage.**
 >
@@ -65,7 +77,7 @@ regenerate it between recording the manifest and uploading.
 | Privacy policy URL | https:// | <https://atlyn.io/legal/privacy> |
 | Terms of use | - | <https://atlyn.io/legal/terms> |
 | EULA | A file, or Microsoft's standard contract | `EULA.md` |
-| Sample report | `.pbix`, fully offline | Offline project committed at `samples/AtlynSample.pbip`; one manual Desktop **Save As** produces the `.pbix` - see section 4.1 |
+| Sample report | `.pbix`, fully offline | Offline project committed at `samples/AtlynSample.pbip`; a manual Desktop **Save As**, after confirming the tables hold data, produces the `.pbix` - see section 4.1 |
 
 ### Visual icon
 
@@ -184,7 +196,8 @@ What is already in the project:
   **DAX calculated table** (`partition Measurements = calculated` with a
   `DATATABLE(...)` source). A calculated table has no data source object at all -
   no Power Query partition, no shared expression, no `dataSources.tmdl` - so there
-  is nothing to authenticate against and nothing to refresh.
+  is nothing to authenticate against and nothing to connect to. It still has to be
+  **evaluated** before it holds rows; steps 3 and 4 below confirm that happened.
 - **The visual embedded as a private custom visual** under
   `AtlynSample.Report/CustomVisuals/`, declared through a `CustomVisual` entry in
   `resourcePackages`. `publicCustomVisuals` is deliberately not used, because it
@@ -200,19 +213,42 @@ Steps:
 2. Run `npm run package` and then `npm run sample-report` so the embedded visual
    matches the exact build you are submitting. (Both are already committed; re-run
    them only after a version bump.)
-3. Open `samples/AtlynSample.pbip`.
-4. Confirm the visual renders and the diagnostics line reports 200 received and 200
-   rendered rows.
+3. Open `samples/AtlynSample.pbip` and **confirm the visual renders with data** - the
+   diagnostics line should report 200 received and 200 rendered rows.
+4. **If any table shows as empty**, or Desktop reports *"Some of the tables have
+   incomplete or no data"*, run **Home > Refresh > Schema and data**, then re-check
+   step 3. The committed project carries no cached model data, so the table has to
+   be evaluated before it holds rows.
+
+   **Do not skip the check in step 3.** A `.pbix` saved while the tables are empty
+   ships with empty tables and fails AppSource review: demonstrating the visual
+   against real data is the entire reason Microsoft requires the sample.
+
+   **Offline check.** If Desktop ever prompts for credentials, authentication, or a
+   data source - on open or during a refresh - something external has entered the
+   semantic model. Stop and investigate. The sample is no longer offline and must
+   not be submitted.
 5. **File > Save As** and choose **Power BI files (\*.pbix)**. Save as
    `samples/AtlynSample.pbix` and commit it.
    `npm run audit:submission` will then report the sample report as present.
+6. Re-open the saved `samples/AtlynSample.pbix` and confirm the visual still renders
+   200 rows. This is the only way to prove the data was baked into the file rather
+   than saved empty.
+
+> **Whether a refresh is actually needed here is untested.** A sibling visual's
+> sample report was observed opening in Desktop with empty tables, but that model
+> uses an M `#table(...)` partition, which Power BI resolves through Power Query.
+> This model is a DAX `DATATABLE` calculated table, which the engine evaluates
+> directly, so Desktop may well materialize it on open with no refresh at all.
+> Neither behaviour is asserted here: step 3 checks, and step 4 fixes it if the
+> check fails. That is correct either way.
 
 > **Verification status.** The project is generated against Microsoft's published
 > PBIP, PBIR, and TMDL schemas and is checked structurally by
 > `tests/sampleReport.test.ts` and `npm run audit:submission`. It has **not** been
 > opened in Power BI Desktop from this repository's automation, because Desktop is
-> Windows-desktop GUI software and is not launched by the build. Step 3 above is
-> therefore also the real-world verification step.
+> Windows-desktop GUI software and is not launched by the build. Steps 3 and 4 above
+> are therefore also the real-world verification step.
 
 > **Format versions.** `definition.pbir` uses `"version": "4.0"` and
 > `definition.pbism` uses `"version": "4.2"` on purpose. Microsoft documents
@@ -224,8 +260,10 @@ Steps:
 
 1. Confirm the Partner Center publisher account, publisher display name, and the
    tax and payout profile are complete.
-2. Create the Power BI visual offer and upload the exact `.pbiviz` recorded in
-   `dist/release-metadata.json`.
+2. Create the Power BI visual offer and upload the `.pbiviz` from the
+   `pbiviz-<commit-sha>` CI artifact for the submitted commit - see the package
+   artifact table in section 1. Check its SHA-256 against the one printed in that
+   run's summary before uploading.
 3. **Leave the offer FREE.** Do not set a price, a trial, or any transactability
    option - see the licensing subsection in section 2. Monetization is handled
    entirely by the Atlyn Stripe subscription at <https://atlyn.io> and is outside
@@ -262,7 +300,7 @@ npm run sample-report         # regenerates samples/ from the built .pbiviz
 npm run icon                  # re-renders assets/icon.png at 20x20 from assets/icon.svg
 npm run audit:submission      # deterministic AppSource asset gate
 npm run certification-audit   # pbiviz certification audit + audit:submission
-npm audit --audit-level=high
+npm audit
 npm run screenshots           # re-captures assets/screenshots from the built visual
 ```
 

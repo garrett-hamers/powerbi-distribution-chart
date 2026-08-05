@@ -37,8 +37,45 @@ jobs:
       - name: Verify reproducible package
         run: npm run package:reproducible
       - name: Audit dependencies
-        run: npm audit --audit-level=high
+        run: npm audit
       - name: Audit AppSource submission assets
         run: npm run audit:submission
       - name: Run certification audit
         run: npm run certification-audit
+      - name: Record packaged artifact checksum
+        env:
+          COMMIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          count=$(find dist -maxdepth 1 -name '*.pbiviz' | wc -l)
+          if [ "$count" -ne 1 ]; then
+            echo "Expected exactly one PBIVIZ artifact in dist/, found $count." >&2
+            exit 1
+          fi
+          file=$(find dist -maxdepth 1 -name '*.pbiviz')
+          bytes=$(stat -c%s "$file")
+          sha=$(sha256sum "$file" | cut -d ' ' -f 1)
+          echo "$(basename "$file"): $bytes bytes, sha256=$sha"
+          {
+            echo "### Packaged visual"
+            echo ""
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| File | \`$(basename "$file")\` |"
+            echo "| Bytes | $bytes |"
+            echo "| SHA-256 | \`$sha\` |"
+            echo "| Commit | \`$COMMIT_SHA\` |"
+            echo ""
+            echo "Download the \`pbiviz-$COMMIT_SHA\` artifact from this run and upload the"
+            echo "\`.pbiviz\` inside it. The SHA-256 above is of the \`.pbiviz\` itself, not of"
+            echo "the ZIP that GitHub wraps around downloaded artifacts."
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload packaged visual
+        uses: actions/upload-artifact@v4
+        with:
+          # On pull_request, github.sha is the synthetic merge commit, which appears
+          # nowhere else. Name the artifact after the real commit that was built.
+          name: pbiviz-${{ github.event.pull_request.head.sha || github.sha }}
+          path: dist/*.pbiviz
+          retention-days: 90
+          if-no-files-found: error

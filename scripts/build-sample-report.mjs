@@ -126,14 +126,20 @@ const buildDataTable = (rows) => {
 };
 
 const buildTable = (rows) => {
-  const indent = "\t\t\t";
+  // TMDL treats the first expression line's indentation as the baseline for the whole
+  // block, so this depth is load-bearing rather than cosmetic. Four tabs is what the
+  // sample that is known to open in Desktop uses; this project shipped three.
+  const indent = "\t\t\t\t";
   return [
     `/// Offline sample observations used to demonstrate the visual.`,
     `table ${TABLE_NAME}`,
     `\tlineageTag: ${stableGuid("table:Measurements")}`,
     "",
+    // No explicit `dataType` on any column below. This is a *calculated* table, so the
+    // column types come from the DATATABLE declaration in the partition; restating them
+    // here can only agree redundantly or disagree, and the disagreement is what breaks.
+    // No sibling sample declares them.
     "\tcolumn Category",
-    "\t\tdataType: string",
     "\t\tisNameInferred",
     `\t\tlineageTag: ${stableGuid("column:Category")}`,
     "\t\tsummarizeBy: none",
@@ -142,7 +148,6 @@ const buildTable = (rows) => {
     "\t\tannotation SummarizationSetBy = Automatic",
     "",
     "\tcolumn Sample",
-    "\t\tdataType: string",
     "\t\tisNameInferred",
     `\t\tlineageTag: ${stableGuid("column:Sample")}`,
     "\t\tsummarizeBy: none",
@@ -151,7 +156,6 @@ const buildTable = (rows) => {
     "\t\tannotation SummarizationSetBy = Automatic",
     "",
     "\tcolumn Value",
-    "\t\tdataType: double",
     "\t\tformatString: 0.0",
     "\t\tisNameInferred",
     `\t\tlineageTag: ${stableGuid("column:Value")}`,

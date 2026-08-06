@@ -1,0 +1,30 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.7.0/schema.json",
+  "name": "6a5a1409f426702d54e576c55f8906ff",
+  "position": {
+    "x": 48,
+    "y": 190,
+    "z": 0,
+    "height": 170,
+    "width": 570,
+    "tabOrder": 1
+  },
+  "visual": {
+    "visualType": "textbox",
+    "objects": {
+      "general": [
+        {
+          "properties": {
+            "paragraphs": {
+              "expr": {
+                "Literal": {
+                  "Value": "'[{\"textRuns\":[{\"value\":\"Usage and formatting\"}]},{\"textRuns\":[{\"value\":\"Add Category, Sample, and Value to the visual. Keep Value as a raw, unsummarized numeric column. Use the formatting pane to show or hide the mean and outliers, and adjust marker and label size for the available space.\"}]}]'"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

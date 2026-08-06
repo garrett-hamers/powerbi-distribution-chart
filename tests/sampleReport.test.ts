@@ -14,21 +14,24 @@ const readJson = <T>(...segments: string[]): T => (
 
 const capabilities = readJson<{ dataRoles: Array<{ name: string }> }>(root, "capabilities.json");
 const roleNames = new Set(capabilities.dataRoles.map((role) => role.name));
+const FROZEN_GUID = "atlynDistributionA1B2C3D4E5F6G7H8I9J0";
 
 function findVisualFile(): string {
   const pagesRoot = path.join(REPORT_ROOT, "definition", "pages");
   const pageIds = fs.readdirSync(pagesRoot, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name);
-  expect(pageIds).toHaveLength(1);
-
-  const visualsRoot = path.join(pagesRoot, pageIds[0], "visuals");
-  const visualIds = fs.readdirSync(visualsRoot, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name);
-  expect(visualIds).toHaveLength(1);
-
-  return path.join(visualsRoot, visualIds[0], "visual.json");
+  const visualFiles = pageIds.flatMap((pageId) => {
+    const visualsRoot = path.join(pagesRoot, pageId, "visuals");
+    return fs.readdirSync(visualsRoot, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => path.join(visualsRoot, entry.name, "visual.json"));
+  });
+  const distributionVisual = visualFiles.find((file) => (
+    readJson<{ visual: { visualType?: string } }>(file).visual.visualType === FROZEN_GUID
+  ));
+  expect(distributionVisual).toBeDefined();
+  return distributionVisual as string;
 }
 
 describe("offline sample report project", () => {
@@ -48,6 +51,13 @@ describe("offline sample report project", () => {
     ].forEach((segments) => expect(fs.existsSync(path.join(...segments))).toBe(true));
 
     expect(fs.existsSync(findVisualFile())).toBe(true);
+    const pagesRoot = path.join(REPORT_ROOT, "definition", "pages");
+    const pageNames = fs.readdirSync(pagesRoot, { withFileTypes: true })
+     .filter((entry) => entry.isDirectory())
+     .map((entry) => readJson<{ displayName: string }>(
+       path.join(pagesRoot, entry.name, "page.json"),
+     ).displayName);
+    expect(pageNames).toEqual(expect.arrayContaining(["Cycle time distribution", "Hints and tips"]));
   });
 
   test("points the PBIP and PBIR at the report and semantic model folders", () => {
@@ -89,6 +99,31 @@ describe("offline sample report project", () => {
     expect(contents).not.toContain("Aggregation");
     expect(contents).toContain('"Property": "Value"');
     expect(contents).toContain('"Entity": "Measurements"');
+  });
+
+  test("includes a native offline hints and tips page", () => {
+    const pagesRoot = path.join(REPORT_ROOT, "definition", "pages");
+    const hintsPageId = fs.readdirSync(pagesRoot, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .find((entry) => readJson<{ displayName: string }>(
+        path.join(pagesRoot, entry.name, "page.json"),
+      ).displayName === "Hints and tips")?.name;
+    expect(hintsPageId).toBeDefined();
+
+    const hintsRoot = path.join(pagesRoot, hintsPageId as string, "visuals");
+    const hintFiles = fs.readdirSync(hintsRoot, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => path.join(hintsRoot, entry.name, "visual.json"));
+    expect(hintFiles.length).toBeGreaterThanOrEqual(4);
+    const hints = hintFiles.map((file) => fs.readFileSync(file, "utf8")).join("\n");
+    expect(hints).toContain('"visualType": "textbox"');
+    [
+      "Category, Sample, and Value",
+      "raw, unsummarized numeric column",
+      "one row per observation",
+      "Things to avoid",
+      "Avoid aggregating Value",
+    ].forEach((token) => expect(hints).toContain(token));
   });
 
   test("embeds the built visual instead of resolving it from AppSource", () => {

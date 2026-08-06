@@ -23,6 +23,8 @@ const MAX_SCREENSHOT_BYTES = 1024 * 1024;
 const MIN_SCREENSHOTS = 1;
 const MAX_SCREENSHOTS = 5;
 const FROZEN_GUID = "atlynDistributionA1B2C3D4E5F6G7H8I9J0";
+const DISTRIBUTION_PAGE_NAME = "Cycle time distribution";
+const HINTS_PAGE_NAME = "Hints and tips";
 const PRIVACY_POLICY_URL = "https://atlyn.io/legal/privacy";
 const SUPPORT_URL = "https://atlyn.io/contact";
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -307,13 +309,22 @@ await check("sample report binds the frozen GUID with declared roles and no exte
   const pageIds = readdirSync(pagesRoot, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name);
-  ensure(pageIds.length === 1, `Expected exactly one report page, found ${pageIds.length}.`);
+  ensure(pageIds.length === 2, `Expected the distribution and hints pages, found ${pageIds.length}.`);
 
-  const visualsRoot = path.join(pagesRoot, pageIds[0], "visuals");
+  const pageByDisplayName = new Map(pageIds.map((pageId) => {
+    const page = readJson(path.join(pagesRoot, pageId, "page.json"));
+    return [page.displayName, pageId];
+  }));
+  const distributionPageId = pageByDisplayName.get(DISTRIBUTION_PAGE_NAME);
+  const hintsPageId = pageByDisplayName.get(HINTS_PAGE_NAME);
+  ensure(distributionPageId, `Missing "${DISTRIBUTION_PAGE_NAME}" page.`);
+  ensure(hintsPageId, `Missing "${HINTS_PAGE_NAME}" page.`);
+
+  const visualsRoot = path.join(pagesRoot, distributionPageId, "visuals");
   const visualIds = readdirSync(visualsRoot, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name);
-  ensure(visualIds.length === 1, `Expected exactly one visual, found ${visualIds.length}.`);
+  ensure(visualIds.length === 1, `Expected exactly one distribution visual, found ${visualIds.length}.`);
 
   const visualPath = path.join(visualsRoot, visualIds[0], "visual.json");
   const visualText = readFileSync(visualPath, "utf8");
@@ -332,6 +343,23 @@ await check("sample report binds the frozen GUID with declared roles and no exte
     !visualText.includes("Aggregation"),
     "Sample report aggregates a field; Atlyn Distribution requires raw, unsummarized observations.",
   );
+
+  const hintsVisualRoot = path.join(pagesRoot, hintsPageId, "visuals");
+  const hintsVisualIds = readdirSync(hintsVisualRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name);
+  ensure(hintsVisualIds.length >= 4, `Expected at least four hints/tips text boxes, found ${hintsVisualIds.length}.`);
+  const hintsText = hintsVisualIds
+    .map((id) => readFileSync(path.join(hintsVisualRoot, id, "visual.json"), "utf8"))
+    .join("\n");
+  ensure(hintsText.includes('"visualType": "textbox"'), "Hints/tips page has no native text box visual.");
+  [
+    "Category, Sample, and Value",
+    "raw, unsummarized numeric column",
+    "one row per observation",
+    "Things to avoid",
+    "Avoid aggregating Value",
+  ].forEach((token) => ensure(hintsText.includes(token), `Hints/tips page is missing "${token}".`));
 
   const report = readJson(path.join(root, "samples", `${SAMPLE_SLUG}.Report`, "definition", "report.json"));
   ensure(

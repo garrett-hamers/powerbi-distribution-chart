@@ -145,9 +145,11 @@ third-party packaging tool is involved.
 built `.pbiviz`, and `npm run audit:submission` regenerates it in memory and fails
 if the committed tree has drifted. `tests/sampleReport.test.ts` additionally
 asserts that the visual binds the frozen GUID, that every `queryState` key is a
-declared `capabilities.json` data role, that no projection is aggregated, and that
-the semantic model contains no Power Query partition, shared expression, or data
-source declaration.
+declared `capabilities.json` data role, and that the `Value` measure role uses the
+aggregation projection Power BI Desktop requires. `Category` and `Sample` uniquely
+identify each row, so `Sum(Value)` preserves one raw observation per group. The test
+also asserts that the semantic model contains no Power Query partition, shared
+expression, or data source declaration.
 
 The embedded bundle is always the plain `npm run package` output, which is the
 artifact recorded in `dist/release-metadata.json` and uploaded to Partner Center.

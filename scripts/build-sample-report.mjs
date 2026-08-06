@@ -86,16 +86,34 @@ const columnProjection = (column) => ({
   }],
 });
 
+const sumProjection = (column) => ({
+  projections: [{
+    field: {
+      Aggregation: {
+        Expression: {
+          Column: {
+            Expression: { SourceRef: { Entity: TABLE_NAME } },
+            Property: column,
+          },
+        },
+        Function: 0,
+      },
+    },
+    queryRef: `Sum(${TABLE_NAME}.${column})`,
+    nativeQueryRef: `Sum of ${column}`,
+  }],
+});
+
 /**
- * Every projection is a plain `Column`, never an `Aggregation`. Atlyn Distribution plots raw
- * observations, so an aggregated Value would break its data contract - this is the PBIR
- * equivalent of setting the field to "Don't summarize" in Power BI Desktop. Each key must
- * match a dataRoles[].name in capabilities.json.
+ * Power BI Desktop requires a field assigned to a `Measure` data role to use an
+ * `Aggregation` projection. Category and Sample together uniquely identify every sample row,
+ * so Sum(Value) still yields exactly one raw observation per group. Each key must match a
+ * dataRoles[].name in capabilities.json.
  */
 const buildQueryState = () => ({
   Category: columnProjection("Category"),
   Sample: columnProjection("Sample"),
-  Value: columnProjection("Value"),
+  Value: sumProjection("Value"),
 });
 
 const escapeDax = (value) => String(value).replaceAll('"', '""');
@@ -204,6 +222,10 @@ export async function buildSampleReportFiles(options = {}) {
   ).href);
   const rows = buildSampleRows();
   ensure(rows.length > 0, "Sample data module produced no rows.");
+  ensure(
+    new Set(rows.map((row) => `${row.category}\0${row.sample}`)).size === rows.length,
+    "Sample Category and Sample pairs must be unique so Sum(Value) preserves raw observations.",
+  );
 
   const pageId = stableId("page:distribution");
   const visualId = stableId("visual:distribution");

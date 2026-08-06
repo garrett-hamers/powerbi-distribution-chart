@@ -316,21 +316,32 @@ await check("sample report binds the frozen GUID with declared roles and no exte
   ensure(visualIds.length === 1, `Expected exactly one visual, found ${visualIds.length}.`);
 
   const visualPath = path.join(visualsRoot, visualIds[0], "visual.json");
-  const visualText = readFileSync(visualPath, "utf8");
-  const visual = JSON.parse(visualText);
+  const visual = readJson(visualPath);
   ensure(
     visual.visual.visualType === FROZEN_GUID,
     `Sample report binds "${visual.visual.visualType}" instead of the frozen GUID.`,
   );
 
-  const stateKeys = Object.keys(visual.visual.query.queryState);
+  const queryState = visual.visual.query.queryState;
+  const stateKeys = Object.keys(queryState);
   stateKeys.forEach((key) => ensure(
     roleNames.has(key),
     `queryState key "${key}" is not a capabilities.json data role.`,
   ));
   ensure(
-    !visualText.includes("Aggregation"),
-    "Sample report aggregates a field; Atlyn Distribution requires raw, unsummarized observations.",
+    stateKeys.join(",") === "Category,Sample,Value",
+    `Sample queryState must bind Category, Sample, and Value; found ${stateKeys.join(", ")}.`,
+  );
+  ensure(
+    queryState.Category.projections?.[0]?.field?.Column
+      && queryState.Sample.projections?.[0]?.field?.Column,
+    "Sample Category and Sample roles must project raw columns.",
+  );
+  const valueAggregation = queryState.Value.projections?.[0]?.field?.Aggregation;
+  ensure(
+    valueAggregation?.Function === 0
+      && valueAggregation.Expression?.Column?.Property === "Value",
+    "Sample Value role must use Sum(Measurements.Value), as required for a Measure role.",
   );
 
   const report = readJson(path.join(root, "samples", `${SAMPLE_SLUG}.Report`, "definition", "report.json"));

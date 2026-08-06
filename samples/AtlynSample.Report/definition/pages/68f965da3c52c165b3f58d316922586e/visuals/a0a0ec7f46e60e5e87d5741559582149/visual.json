@@ -53,17 +53,22 @@
           "projections": [
             {
               "field": {
-                "Column": {
+                "Aggregation": {
                   "Expression": {
-                    "SourceRef": {
-                      "Entity": "Measurements"
+                    "Column": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "Measurements"
+                        }
+                      },
+                      "Property": "Value"
                     }
                   },
-                  "Property": "Value"
+                  "Function": 0
                 }
               },
-              "queryRef": "Measurements.Value",
-              "nativeQueryRef": "Value"
+              "queryRef": "Sum(Measurements.Value)",
+              "nativeQueryRef": "Sum of Value"
             }
           ]
         }

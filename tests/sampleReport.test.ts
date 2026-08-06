@@ -83,12 +83,32 @@ describe("offline sample report project", () => {
     stateKeys.forEach((key) => expect(queryState[key].projections.length).toBeGreaterThan(0));
   });
 
-  test("projects raw columns rather than aggregates", () => {
-    const contents = fs.readFileSync(findVisualFile(), "utf8");
-    // Atlyn Distribution plots raw observations; an aggregated Value would break its contract.
-    expect(contents).not.toContain("Aggregation");
-    expect(contents).toContain('"Property": "Value"');
-    expect(contents).toContain('"Entity": "Measurements"');
+  test("uses columns for grouping roles and a singleton sum for the measure role", () => {
+    const visual = readJson<{
+      visual: {
+        query: {
+          queryState: Record<string, {
+            projections: Array<{
+              field: {
+                Column?: { Property: string };
+                Aggregation?: {
+                  Expression: { Column: { Property: string } };
+                  Function: number;
+                };
+              };
+            }>;
+          }>;
+        };
+      };
+    }>(findVisualFile());
+    const queryState = visual.visual.query.queryState;
+
+    expect(queryState.Category.projections[0].field.Column?.Property).toBe("Category");
+    expect(queryState.Sample.projections[0].field.Column?.Property).toBe("Sample");
+    expect(queryState.Value.projections[0].field.Aggregation).toEqual(expect.objectContaining({
+      Expression: { Column: expect.objectContaining({ Property: "Value" }) },
+      Function: 0,
+    }));
   });
 
   test("embeds the built visual instead of resolving it from AppSource", () => {

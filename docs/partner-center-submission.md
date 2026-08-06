@@ -189,8 +189,10 @@ What is already in the project:
 - **Report** in the documented PBIR format
   (`AtlynSample.Report/definition/**.json`), with the visual bound to
   `visualType: atlynDistributionA1B2C3D4E5F6G7H8I9J0` and `Category`, `Sample`, and
-  `Value` each projected as a raw **Column** - the PBIR equivalent of *Don't
-  summarize*, which this visual requires.
+  `Value` assigned to their declared data roles. Power BI Desktop requires `Value`,
+  whose role kind is **Measure**, to use an aggregation projection. Each
+  `(Category, Sample)` pair identifies exactly one row, so `Sum(Value)` yields the
+  original raw observation rather than combining samples.
 - **Semantic model** in TMDL
   (`AtlynSample.SemanticModel/definition/**.tmdl`) holding all 200 rows in a
   **DAX calculated table** (`partition Measurements = calculated` with a

@@ -9,7 +9,13 @@ const { FIXED_ZIP_DATE, normalizePackage } = require("../scripts/normalize-pbivi
 const root = path.resolve(__dirname, "..");
 const capabilities = JSON.parse(fs.readFileSync(path.join(root, "capabilities.json"), "utf8")) as {
   dataRoles: Array<{ name: string; displayNameKey?: string }>;
-  dataViewMappings: Array<{ conditions: Array<Record<string, { min?: number; max?: number }>> }>;
+  dataViewMappings: Array<{
+    conditions: Array<Record<string, { min?: number; max?: number }>>;
+    categorical: {
+      categories: { dataReductionAlgorithm: { window: { count: number } } };
+      values: { group: { dataReductionAlgorithm: { top: { count: number } } } };
+    };
+  }>;
   privileges: unknown[];
   supportsHighlight: boolean;
   tooltips: unknown;
@@ -65,7 +71,10 @@ describe("certification-first package contract", () => {
     expect(capabilities.privileges).toEqual([]);
     expect(roleNames).toEqual(["Category", "Sample", "Value", "Tooltips"]);
     expect(capabilities.supportsHighlight).toBe(true);
-    expect(JSON.stringify(capabilities)).toContain('"count":30000');
+    expect(capabilities.dataViewMappings[0].categorical.categories.dataReductionAlgorithm)
+      .toEqual({ window: { count: 30000 } });
+    expect(capabilities.dataViewMappings[0].categorical.values.group.dataReductionAlgorithm)
+      .toEqual({ top: { count: 30000 } });
     expect(capabilities.dataViewMappings[0].conditions[0]).toMatchObject({
       Category: { min: 1, max: 1 },
       Sample: { min: 1, max: 1 },
@@ -79,7 +88,7 @@ describe("certification-first package contract", () => {
     expect(capabilities.objects.general.properties.markerSize.type.numeric).toBe(true);
     expect(pbiviz.visual.guid).toBe("atlynDistributionA1B2C3D4E5F6G7H8I9J0");
     expect(pbiviz.apiVersion).toBe("5.11.0");
-    expect(pbiviz.visual.version).toBe("1.0.1.0");
+    expect(pbiviz.visual.version).toBe("1.0.1.2");
     expect(packageJson.scripts.eslint).toBe("eslint .");
     expect(packageJson.scripts["certification-audit"])
       .toBe("npm run package:certification && npm run package && npm run audit:submission");
@@ -99,7 +108,7 @@ describe("certification-first package contract", () => {
   test("uses the visual identity for the exact package filename", () => {
     const pbiviz = JSON.parse(fs.readFileSync(path.join(root, "pbiviz.json"), "utf8"));
     expect(`${pbiviz.visual.guid}.${pbiviz.visual.version}.pbiviz`)
-      .toBe("atlynDistributionA1B2C3D4E5F6G7H8I9J0.1.0.1.0.pbiviz");
+      .toBe("atlynDistributionA1B2C3D4E5F6G7H8I9J0.1.0.1.2.pbiviz");
   });
 
   test("keeps package manifest references aligned with checked-in source assets", () => {

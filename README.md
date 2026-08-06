@@ -9,10 +9,13 @@ because an aggregate is not a raw distribution. It calculates Hyndman-Fan Type
 observations are retained. When IQR is zero, the repeated value is still the
 Tukey fence, so any value outside that fence remains a genuine outlier.
 
-The raw-observation contract is deliberately bounded to the 30,000-row host
-window. This release does not call `fetchMoreData`: categorical grouped
-segments cannot be appended safely without a host-level proof that sample
-identity and duplicate rows are reconciled. Instead, the visual reports the
+The raw-observation contract is deliberately bounded to 30,000 host categories
+and 30,000 grouped sample series. Both reduction axes are declared explicitly;
+without the grouped-series declaration Power BI applies its default ten-series
+limit before the visual receives data. This release does not call
+`fetchMoreData`: categorical grouped segments cannot be appended safely without
+a host-level proof that sample identity and duplicate rows are reconciled.
+Instead, the visual reports the
 received, rendered, invalid, and dropped row counts, visibly labels a full
 window as potentially partial, and never claims population completeness. It
 also provides native host tooltips with touch long-press behavior,

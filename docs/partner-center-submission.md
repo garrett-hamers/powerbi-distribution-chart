@@ -18,7 +18,7 @@ still has to do by hand.
 | Visual name | `atlynDistribution` | `pbiviz.json` -> `visual.name` |
 | Display name | `Atlyn Distribution` | `pbiviz.json` -> `visual.displayName` |
 | GUID (**frozen**) | `atlynDistributionA1B2C3D4E5F6G7H8I9J0` | `pbiviz.json` -> `visual.guid` |
-| Version (four-part) | `1.0.1.0` | `pbiviz.json` -> `visual.version` |
+| Version (four-part) | `1.0.1.2` | `pbiviz.json` -> `visual.version` |
 | API version | `5.11.0` | `pbiviz.json` -> `apiVersion` |
 | Description | "Compare grouped distributions at a glance. Atlyn Distribution renders raw observations as box plots with Hyndman-Fan Type 7 quartiles, Tukey 1.5xIQR whiskers, mean markers, and genuine outliers, plus transparent row-count diagnostics that never overstate data completeness." | `pbiviz.json` -> `visual.description` |
 | Support URL | <https://atlyn.io/contact> | `pbiviz.json` -> `visual.supportUrl` |
@@ -33,7 +33,7 @@ still has to do by hand.
 
 | Field | Value |
 | --- | --- |
-| Artifact filename | `atlynDistributionA1B2C3D4E5F6G7H8I9J0.1.0.1.0.pbiviz` |
+| Artifact filename | `atlynDistributionA1B2C3D4E5F6G7H8I9J0.1.0.1.2.pbiviz` |
 | Build command | `npm run package` |
 | Reproducibility gate | `npm run package:reproducible` (packages twice, requires identical filename, byte count, and SHA-256) |
 | Release manifest | `npm run release:metadata` -> `dist/release-metadata.json` |
@@ -53,18 +53,17 @@ GitHub wraps downloaded artifacts in a ZIP. The recorded SHA-256 is of the
 
 Do not regenerate the package between recording the checksum and uploading.
 
-> **v1.0.1.0 supersedes the v1.0.0.0 artifact currently in Blob storage.**
+> **v1.0.1.2 supersedes the submitted v1.0.1.1 package.**
 >
-> The packaged filename embeds the version, so v1.0.1.0 lands at a different
-> version-keyed Blob path and does not overwrite the existing v1.0.0.0 object.
-> Publish the new artifact, repoint the storefront release manifest at it, and
-> retire the v1.0.0.0 entry.
+> The packaged filename embeds the version, so v1.0.1.2 is a distinct binary.
+> Publish and submit only the package produced by the CI run for the final source
+> commit; do not relabel or overwrite an earlier artifact.
 >
-> The bump exists because correcting the packaged icon to a real 20x20 PNG
-> changed the artifact bytes. Shipping different bytes under the same version
-> number would break the assumption that a version-keyed path identifies exactly
-> one build. The GUID is deliberately unchanged, so the visual is still the same
-> product and existing reports keep working.
+> This bump adds the missing grouped-series data-reduction declaration. Without
+> it, Power BI Desktop returns only its default ten `Sample` series and the
+> offline sample renders 50 of 200 observations. The GUID is deliberately
+> unchanged, so the visual remains the same product and existing reports keep
+> working.
 
 ## 2. Listing assets
 

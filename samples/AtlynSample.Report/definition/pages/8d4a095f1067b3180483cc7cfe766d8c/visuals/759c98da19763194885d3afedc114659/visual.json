@@ -1,0 +1,30 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.7.0/schema.json",
+  "name": "759c98da19763194885d3afedc114659",
+  "position": {
+    "x": 48,
+    "y": 390,
+    "z": 0,
+    "height": 190,
+    "width": 1184,
+    "tabOrder": 3
+  },
+  "visual": {
+    "visualType": "textbox",
+    "objects": {
+      "general": [
+        {
+          "properties": {
+            "paragraphs": {
+              "expr": {
+                "Literal": {
+                  "Value": "'[{\"textRuns\":[{\"value\":\"Things to avoid\"}]},{\"textRuns\":[{\"value\":\"Avoid aggregating Value, mixing units, or sending precomputed quartiles instead of raw observations. Avoid relying on a complete dataset when Power BI has applied a row limit: the visual reports diagnostics and does not assert completeness. Filter or reduce the source before adding more rows.\"}]}]'"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

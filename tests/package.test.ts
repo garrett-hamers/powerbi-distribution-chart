@@ -79,7 +79,7 @@ describe("certification-first package contract", () => {
     expect(capabilities.objects.general.properties.markerSize.type.numeric).toBe(true);
     expect(pbiviz.visual.guid).toBe("atlynDistributionA1B2C3D4E5F6G7H8I9J0");
     expect(pbiviz.apiVersion).toBe("5.11.0");
-    expect(pbiviz.visual.version).toBe("1.0.1.0");
+    expect(pbiviz.visual.version).toBe("1.0.1.1");
     expect(packageJson.scripts.eslint).toBe("eslint .");
     expect(packageJson.scripts["certification-audit"])
       .toBe("npm run package:certification && npm run package && npm run audit:submission");
@@ -99,7 +99,7 @@ describe("certification-first package contract", () => {
   test("uses the visual identity for the exact package filename", () => {
     const pbiviz = JSON.parse(fs.readFileSync(path.join(root, "pbiviz.json"), "utf8"));
     expect(`${pbiviz.visual.guid}.${pbiviz.visual.version}.pbiviz`)
-      .toBe("atlynDistributionA1B2C3D4E5F6G7H8I9J0.1.0.1.0.pbiviz");
+      .toBe("atlynDistributionA1B2C3D4E5F6G7H8I9J0.1.0.1.1.pbiviz");
   });
 
   test("keeps package manifest references aligned with checked-in source assets", () => {

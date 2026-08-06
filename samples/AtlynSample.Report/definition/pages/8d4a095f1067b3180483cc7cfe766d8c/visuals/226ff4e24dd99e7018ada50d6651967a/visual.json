@@ -1,0 +1,30 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.7.0/schema.json",
+  "name": "226ff4e24dd99e7018ada50d6651967a",
+  "position": {
+    "x": 48,
+    "y": 36,
+    "z": 0,
+    "height": 132,
+    "width": 1184,
+    "tabOrder": 0
+  },
+  "visual": {
+    "visualType": "textbox",
+    "objects": {
+      "general": [
+        {
+          "properties": {
+            "paragraphs": {
+              "expr": {
+                "Literal": {
+                  "Value": "'[{\"textRuns\":[{\"value\":\"Atlyn Distribution: hints and tips\"}]},{\"textRuns\":[{\"value\":\"Use this page as a quick guide, then return to Cycle time distribution to explore the data.\"}]}]'"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

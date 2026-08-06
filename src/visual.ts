@@ -672,9 +672,7 @@ export class Visual implements powerbi.extensibility.visual.IVisual {
     dataView: powerbi.DataView | undefined,
     viewport: powerbi.IViewport,
   ): boolean {
-    while (this.diagnostics.firstChild) {
-      this.diagnostics.removeChild(this.diagnostics.firstChild);
-    }
+    this.diagnostics.replaceChildren();
 
     const visible = viewport.width >= MIN_DIAGNOSTICS_WIDTH && viewport.height >= MIN_DIAGNOSTICS_HEIGHT;
     this.diagnostics.style.display = visible ? "block" : "none";
@@ -750,9 +748,7 @@ export class Visual implements powerbi.extensibility.visual.IVisual {
     viewport: powerbi.IViewport,
     diagnosticsVisible: boolean,
   ): void {
-    while (this.svg.firstChild) {
-      this.svg.removeChild(this.svg.firstChild);
-    }
+    this.svg.replaceChildren();
     this.svg.setAttribute("viewBox", `0 0 ${Math.max(1, viewport.width)} ${Math.max(1, viewport.height)}`);
     this.svg.setAttribute("direction", this.rtl ? "rtl" : "ltr");
 
@@ -786,14 +782,18 @@ export class Visual implements powerbi.extensibility.visual.IVisual {
     const margin = this.chartMargin(viewport, diagnosticsVisible);
     const plotWidth = Math.max(1, viewport.width - margin.left - margin.right);
     const plotHeight = Math.max(1, viewport.height - margin.top - margin.bottom);
-    const values = model.distributions.flatMap((distribution) => (
-      distribution.statistics ? [
-        distribution.statistics.min,
-        distribution.statistics.max,
-      ] : []
-    ));
-    const domainMin = values.length > 0 ? Math.min(...values) : 0;
-    const domainMax = values.length > 0 ? Math.max(...values) : 1;
+    let domainMin = Number.POSITIVE_INFINITY;
+    let domainMax = Number.NEGATIVE_INFINITY;
+    model.distributions.forEach((distribution) => {
+      if (distribution.statistics) {
+        domainMin = Math.min(domainMin, distribution.statistics.min);
+        domainMax = Math.max(domainMax, distribution.statistics.max);
+      }
+    });
+    if (!Number.isFinite(domainMin) || !Number.isFinite(domainMax)) {
+      domainMin = 0;
+      domainMax = 1;
+    }
     const padding = domainMin === domainMax ? Math.max(1, Math.abs(domainMin) * 0.1) : (domainMax - domainMin) * 0.08;
     const yMin = domainMin - padding;
     const yMax = domainMax + padding;
@@ -997,19 +997,22 @@ export class Visual implements powerbi.extensibility.visual.IVisual {
       group.appendChild(meanMarker);
     }
 
-    distribution.observations
-      .filter((observation) => observation.highlighted || observation.selected)
-      .slice(0, MAX_RENDERED_MARKERS_PER_DISTRIBUTION)
-      .forEach((observation, observationIndex) => {
-        this.renderObservationMarker(group, distribution, observation, center, y, boxWidth, observationIndex, slotHalf);
-      });
+    let observationIndex = 0;
+    for (const observation of distribution.observations) {
+      if (!(observation.highlighted || observation.selected)) {
+        continue;
+      }
+      if (observationIndex >= MAX_RENDERED_MARKERS_PER_DISTRIBUTION) {
+        break;
+      }
+      this.renderObservationMarker(group, distribution, observation, center, y, boxWidth, observationIndex, slotHalf);
+      observationIndex += 1;
+    }
 
     if (this.showOutliers) {
-      distribution.outliers
-        .slice(0, MAX_RENDERED_MARKERS_PER_DISTRIBUTION)
-        .forEach((outlier, outlierIndex) => {
-          this.renderOutlier(group, distribution, outlier, center, y, boxWidth, outlierIndex, slotHalf);
-        });
+      distribution.outliers.slice(0, MAX_RENDERED_MARKERS_PER_DISTRIBUTION).forEach((outlier, outlierIndex) => {
+        this.renderOutlier(group, distribution, outlier, center, y, boxWidth, outlierIndex, slotHalf);
+      });
     }
 
     const stateText = distribution.state === "small-sample" ? svgElement("text", {

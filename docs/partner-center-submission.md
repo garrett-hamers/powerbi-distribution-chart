@@ -76,7 +76,7 @@ Do not regenerate the package between recording the checksum and uploading.
 | Privacy policy URL | https:// | <https://atlyn.io/legal/privacy> |
 | Terms of use | - | <https://atlyn.io/legal/terms> |
 | EULA | A file, or Microsoft's standard contract | `EULA.md` |
-| Sample report | `.pbix`, fully offline | Offline project committed at `samples/AtlynSample.pbip`; a manual Desktop **Save As**, after confirming the tables hold data, produces the `.pbix` - see section 4.1 |
+| Sample report | `.pbix`, fully offline | `samples/AtlynSample.pbix`, produced from the committed offline project and verified in Desktop - see section 4.1 |
 
 ### Visual icon
 
@@ -236,20 +236,13 @@ Steps:
    200 rows. This is the only way to prove the data was baked into the file rather
    than saved empty.
 
-> **Whether a refresh is actually needed here is untested.** A sibling visual's
-> sample report was observed opening in Desktop with empty tables, but that model
-> uses an M `#table(...)` partition, which Power BI resolves through Power Query.
-> This model is a DAX `DATATABLE` calculated table, which the engine evaluates
-> directly, so Desktop may well materialize it on open with no refresh at all.
-> Neither behaviour is asserted here: step 3 checks, and step 4 fixes it if the
-> check fails. That is correct either way.
-
-> **Verification status.** The project is generated against Microsoft's published
-> PBIP, PBIR, and TMDL schemas and is checked structurally by
-> `tests/sampleReport.test.ts` and `npm run audit:submission`. It has **not** been
-> opened in Power BI Desktop from this repository's automation, because Desktop is
-> Windows-desktop GUI software and is not launched by the build. Steps 3 and 4 above
-> are therefore also the real-world verification step.
+> **Desktop verification record.** On 2026-08-06, Power BI Desktop 2.156.951.0
+> opened the 1.0.1.2 PBIP and requested a calculated-table refresh. After
+> **Refresh now**, the visual visibly reported **200 received / 200 rendered**.
+> Desktop saved `samples/AtlynSample.pbix` with the **Public** sensitivity label;
+> reopening that PBIX still reported 200/200 with no refresh or credentials prompt.
+> The PBIX is 69,153 bytes with SHA-256
+> `6416e3465197feb084013769e24387af218bd81cc3e8856cc65bd79a570aa549`.
 
 > **Format versions.** `definition.pbir` uses `"version": "4.0"` and
 > `definition.pbism` uses `"version": "4.2"` on purpose. Microsoft documents

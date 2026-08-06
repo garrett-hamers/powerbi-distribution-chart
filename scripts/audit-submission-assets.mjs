@@ -266,7 +266,13 @@ await check("offline sample report project matches its deterministic generator",
       if (entry.isDirectory()) {
         walk(absolute);
       } else if (entry.isFile()) {
-        committed.set(relative(absolute), readFileSync(absolute, "utf8"));
+        const relativePath = relative(absolute);
+        // Desktop authors this binary after the deterministic PBIP has passed its
+        // manual 200/200 check. It is audited separately below, not regenerated.
+        if (relativePath === `samples/${SAMPLE_SLUG}.pbix`) {
+          continue;
+        }
+        committed.set(relativePath, readFileSync(absolute, "utf8"));
       }
     }
   };

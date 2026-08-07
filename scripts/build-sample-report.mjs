@@ -390,11 +390,16 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   const root = process.cwd();
   const files = await buildSampleReportFiles({ root });
   const target = path.join(root, SAMPLE_ROOT);
+  const pbixPath = path.join(target, `${SAMPLE_SLUG}.pbix`);
+  const pbix = existsSync(pbixPath) ? readFileSync(pbixPath) : undefined;
   rmSync(target, { recursive: true, force: true });
   for (const [relativePath, contents] of files) {
     const absolute = path.join(root, relativePath);
     mkdirSync(path.dirname(absolute), { recursive: true });
     writeFileSync(absolute, contents, "utf8");
+  }
+  if (pbix) {
+    writeFileSync(pbixPath, pbix);
   }
   const embedded = [...files.keys()].some((key) => key.includes("/CustomVisuals/"));
   console.log(`Wrote ${files.size} file(s) into ${SAMPLE_ROOT}/`);

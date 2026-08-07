@@ -24,6 +24,7 @@ export const SAMPLE_DISPLAY_NAME = "Atlyn Distribution Sample";
 export const SAMPLE_ROOT = "samples";
 export const TABLE_NAME = "Measurements";
 export const PAGE_DISPLAY_NAME = "Cycle time distribution";
+export const HINTS_PAGE_DISPLAY_NAME = "Hints and tips";
 export const VISUAL_TITLE = "Cycle time distribution by production line";
 
 export const SCHEMAS = {
@@ -103,6 +104,32 @@ const sumProjection = (column) => ({
     nativeQueryRef: `Sum of ${column}`,
   }],
 });
+
+const escapeLiteral = (value) => String(value).replaceAll("'", "''");
+
+const buildTextBox = (name, position, paragraphs) => ({
+  $schema: SCHEMAS.visualContainer,
+  name,
+  position,
+  visual: {
+    visualType: "textbox",
+    objects: {
+      general: [{
+        properties: {
+          paragraphs: {
+            expr: {
+              Literal: {
+                Value: `'${escapeLiteral(JSON.stringify(paragraphs))}'`,
+              },
+            },
+          },
+        },
+      }],
+    },
+  },
+});
+
+const textParagraph = (value) => ({ textRuns: [{ value }] });
 
 /**
  * Power BI Desktop requires a field assigned to a `Measure` data role to use an
@@ -229,6 +256,10 @@ export async function buildSampleReportFiles(options = {}) {
 
   const pageId = stableId("page:distribution");
   const visualId = stableId("visual:distribution");
+  const hintsPageId = stableId("page:hints");
+  const hintsVisualIds = ["overview", "formatting", "data-shape", "avoid"].map((section) => (
+    stableId(`visual:hints:${section}`)
+  ));
   const files = new Map();
   const add = (relativePath, contents) => files.set(relativePath, contents);
 
@@ -311,7 +342,7 @@ export async function buildSampleReportFiles(options = {}) {
   }));
   add(`${SAMPLE_ROOT}/${reportFolder}/definition/pages/pages.json`, json({
     $schema: SCHEMAS.pagesMetadata,
-    pageOrder: [pageId],
+    pageOrder: [pageId, hintsPageId],
     activePageName: pageId,
   }));
   add(`${SAMPLE_ROOT}/${reportFolder}/definition/pages/${pageId}/page.json`, json({
@@ -335,6 +366,54 @@ export async function buildSampleReportFiles(options = {}) {
       drillFilterOtherVisuals: true,
     },
   }));
+
+  add(`${SAMPLE_ROOT}/${reportFolder}/definition/pages/${hintsPageId}/page.json`, json({
+    $schema: SCHEMAS.page,
+    name: hintsPageId,
+    displayName: HINTS_PAGE_DISPLAY_NAME,
+    displayOption: "FitToPage",
+    height: 720,
+    width: 1280,
+  }));
+  [
+    {
+      id: hintsVisualIds[0],
+      position: { x: 48, y: 36, z: 0, height: 132, width: 1184, tabOrder: 0 },
+      paragraphs: [
+        textParagraph("Atlyn Distribution: hints and tips"),
+        textParagraph("Use this page as a quick guide, then return to Cycle time distribution to explore the data."),
+      ],
+    },
+    {
+      id: hintsVisualIds[1],
+      position: { x: 48, y: 190, z: 0, height: 170, width: 570, tabOrder: 1 },
+      paragraphs: [
+        textParagraph("Usage and formatting"),
+        textParagraph("Add Category, Sample, and Value to the visual. Keep Value as a raw, unsummarized numeric column. Use the formatting pane to show or hide the mean and outliers, and adjust marker and label size for the available space."),
+      ],
+    },
+    {
+      id: hintsVisualIds[2],
+      position: { x: 662, y: 190, z: 0, height: 170, width: 570, tabOrder: 2 },
+      paragraphs: [
+        textParagraph("Data shape"),
+        textParagraph("Provide one row per observation: Category identifies the distribution, Sample identifies the run or item, and Value is the numeric measurement. Repeated categories are grouped together. Keep values finite and use a consistent unit and numeric format."),
+      ],
+    },
+    {
+      id: hintsVisualIds[3],
+      position: { x: 48, y: 390, z: 0, height: 190, width: 1184, tabOrder: 3 },
+      paragraphs: [
+        textParagraph("Things to avoid"),
+        textParagraph("Avoid aggregating Value, mixing units, or sending precomputed quartiles instead of raw observations. Avoid relying on a complete dataset when Power BI has applied a row limit: the visual reports diagnostics and does not assert completeness. Filter or reduce the source before adding more rows."),
+      ],
+    },
+  ].forEach((textbox) => {
+    add(
+      `${SAMPLE_ROOT}/${reportFolder}/definition/pages/${hintsPageId}/visuals/${textbox.id}/visual.json`,
+      json(buildTextBox(textbox.id, textbox.position, textbox.paragraphs)),
+    );
+  });
 
   if (includeCustomVisual) {
     const packaged = await readPackagedVisual(root, guid, pbiviz.visual.version);
@@ -374,6 +453,12 @@ export async function buildSampleReportFiles(options = {}) {
     "   the tables are empty ships a `.pbix` with no data, which fails AppSource review.",
     "3. **File > Save As** a `.pbix`, then re-open it and confirm the visual still",
     "   renders 200 rows.",
+    "",
+    "## Hints and tips page",
+    "",
+    `The report includes a native **${HINTS_PAGE_DISPLAY_NAME}** page with concrete guidance on`,
+    "usage, formatting, raw-observation data shape, and things to avoid. It is part of the",
+    "generated PBIR project and does not require an online visual or external data source.",
     "",
     "If Desktop ever prompts for credentials, authentication, or a data source, something",
     "external has entered the model and the sample is no longer offline. Stop and",

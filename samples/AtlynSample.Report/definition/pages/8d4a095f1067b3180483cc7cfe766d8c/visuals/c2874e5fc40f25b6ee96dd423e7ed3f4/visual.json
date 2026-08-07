@@ -1,0 +1,30 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.7.0/schema.json",
+  "name": "c2874e5fc40f25b6ee96dd423e7ed3f4",
+  "position": {
+    "x": 662,
+    "y": 190,
+    "z": 0,
+    "height": 170,
+    "width": 570,
+    "tabOrder": 2
+  },
+  "visual": {
+    "visualType": "textbox",
+    "objects": {
+      "general": [
+        {
+          "properties": {
+            "paragraphs": {
+              "expr": {
+                "Literal": {
+                  "Value": "'[{\"textRuns\":[{\"value\":\"Data shape\"}]},{\"textRuns\":[{\"value\":\"Provide one row per observation: Category identifies the distribution, Sample identifies the run or item, and Value is the numeric measurement. Repeated categories are grouped together. Keep values finite and use a consistent unit and numeric format.\"}]}]'"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

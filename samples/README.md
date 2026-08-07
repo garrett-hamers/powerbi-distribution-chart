@@ -28,6 +28,12 @@ Regenerate with `npm run package` then `npm run sample-report`.
 3. **File > Save As** a `.pbix`, then re-open it and confirm the visual still
    renders 200 rows.
 
+## Hints and tips page
+
+The report includes a native **Hints and tips** page with concrete guidance on
+usage, formatting, raw-observation data shape, and things to avoid. It is part of the
+generated PBIR project and does not require an online visual or external data source.
+
 If Desktop ever prompts for credentials, authentication, or a data source, something
 external has entered the model and the sample is no longer offline. Stop and
 investigate.

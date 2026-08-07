@@ -204,6 +204,9 @@ What is already in the project:
   `resourcePackages`. `publicCustomVisuals` is deliberately not used, because it
   resolves the visual from the AppSource store and would make the report
   non-offline.
+- **A native `Hints and tips` report page** with concrete usage, formatting,
+  raw-observation data-shape, and avoid-list guidance. The page uses built-in PBIR
+  text boxes, so it does not add a data source or an online dependency.
 
 Steps:
 

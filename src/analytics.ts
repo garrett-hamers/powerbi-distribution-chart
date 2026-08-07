@@ -134,10 +134,22 @@ function calculateStatistics(values: readonly number[]): DistributionStatistics 
   const rawUpperFence = q3 + 1.5 * iqr;
   const lowerFence = Number.isFinite(rawLowerFence) ? rawLowerFence : -Number.MAX_VALUE;
   const upperFence = Number.isFinite(rawUpperFence) ? rawUpperFence : Number.MAX_VALUE;
-  const lowerInliers = sorted.filter((value) => value >= lowerFence);
-  const upperInliers = sorted.filter((value) => value <= upperFence);
   const rawMean = sorted.reduce((sum, value) => sum + value / sorted.length, 0);
   const mean = Number.isFinite(rawMean) ? rawMean : median;
+  let lowerWhisker = sorted[0];
+  let upperWhisker = sorted[sorted.length - 1];
+  for (const value of sorted) {
+    if (value >= lowerFence) {
+      lowerWhisker = value;
+      break;
+    }
+  }
+  for (let index = sorted.length - 1; index >= 0; index -= 1) {
+    if (sorted[index] <= upperFence) {
+      upperWhisker = sorted[index];
+      break;
+    }
+  }
 
   return {
     n: sorted.length,
@@ -150,8 +162,8 @@ function calculateStatistics(values: readonly number[]): DistributionStatistics 
     iqr,
     lowerFence,
     upperFence,
-    lowerWhisker: lowerInliers[0],
-    upperWhisker: upperInliers[upperInliers.length - 1],
+    lowerWhisker,
+    upperWhisker,
   };
 }
 
@@ -181,6 +193,7 @@ export function buildDistributionModel(
   const grouped = new Map<string, {
     category: string;
     values: ValidObservation[];
+    numericValues: number[];
     invalidCount: number;
     selectionKey?: string;
     categorySelectionKey?: string;
@@ -192,12 +205,15 @@ export function buildDistributionModel(
   let renderedRows = 0;
   let hasHighlights = false;
 
-  observations.slice(0, boundedMaximum).forEach((observation, originalIndex) => {
+  const observationCount = Math.min(observations.length, boundedMaximum);
+  for (let originalIndex = 0; originalIndex < observationCount; originalIndex += 1) {
+    const observation = observations[originalIndex];
     const category = observation.category || "(Blank category)";
     const groupKey = observation.categorySelectionKey ?? category;
     const group = grouped.get(groupKey) ?? {
       category,
       values: [],
+      numericValues: [],
       invalidCount: 0,
       selected: false,
       highlighted: false,
@@ -222,7 +238,7 @@ export function buildDistributionModel(
     if (!isFiniteNumber(observation.value)) {
       group.invalidCount += 1;
       invalidRows += 1;
-      return;
+      continue;
     }
 
     const validObservation: ValidObservation = {
@@ -240,11 +256,12 @@ export function buildDistributionModel(
       highlighted: observation.highlighted ?? false,
     };
     group.values.push(validObservation);
+    group.numericValues.push(observation.value);
     renderedRows += 1;
-  });
+  }
 
   const distributions = [...grouped.values()].map((group) => {
-    const statistics = group.values.length > 0 ? calculateStatistics(group.values.map((value) => value.value)) : undefined;
+    const statistics = group.values.length > 0 ? calculateStatistics(group.numericValues) : undefined;
     const outliers = statistics
       ? group.values
         .filter((value) => value.value < statistics.lowerFence || value.value > statistics.upperFence)

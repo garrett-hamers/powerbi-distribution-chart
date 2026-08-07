@@ -18,7 +18,7 @@ still has to do by hand.
 | Visual name | `atlynDistribution` | `pbiviz.json` -> `visual.name` |
 | Display name | `Atlyn Distribution` | `pbiviz.json` -> `visual.displayName` |
 | GUID (**frozen**) | `atlynDistributionA1B2C3D4E5F6G7H8I9J0` | `pbiviz.json` -> `visual.guid` |
-| Version (four-part) | `1.0.1.1` | `pbiviz.json` -> `visual.version` |
+| Version (four-part) | `1.0.1.2` | `pbiviz.json` -> `visual.version` |
 | API version | `5.11.0` | `pbiviz.json` -> `apiVersion` |
 | Description | "Compare grouped distributions at a glance. Atlyn Distribution renders raw observations as box plots with Hyndman-Fan Type 7 quartiles, Tukey 1.5xIQR whiskers, mean markers, and genuine outliers, plus transparent row-count diagnostics that never overstate data completeness." | `pbiviz.json` -> `visual.description` |
 | Support URL | <https://atlyn.io/contact> | `pbiviz.json` -> `visual.supportUrl` |
@@ -33,11 +33,12 @@ still has to do by hand.
 
 | Field | Value |
 | --- | --- |
-| Artifact filename | `atlynDistributionA1B2C3D4E5F6G7H8I9J0.1.0.1.1.pbiviz` |
+| Artifact filename | `atlynDistributionA1B2C3D4E5F6G7H8I9J0.1.0.1.2.pbiviz` |
 | Build command | `npm run package` |
 | Reproducibility gate | `npm run package:reproducible` (packages twice, requires identical filename, byte count, and SHA-256) |
 | Release manifest | `npm run release:metadata` -> `dist/release-metadata.json` |
-| **Canonical binary** | the `pbiviz-<commit-sha>` artifact published by the CI run for the submitted commit |
+| **Canonical binary** | `pbiviz-e2b17c68c5cb0dc504fe1501122ae62c163e45e0` from CI run `31222816784` |
+| **Submitted PBIVIZ SHA-256** | `c88e0699c7442fa9ba988433ac4668dbe4154e0ae9a03a5c26fedd1425716779` |
 
 **Upload CI's binary, not a local build.** Every CI run publishes the built
 `.pbiviz` as a downloadable artifact named `pbiviz-<commit-sha>`, and prints its
@@ -53,18 +54,17 @@ GitHub wraps downloaded artifacts in a ZIP. The recorded SHA-256 is of the
 
 Do not regenerate the package between recording the checksum and uploading.
 
-> **v1.0.1.1 supersedes the previously submitted v1.0.1.0 artifact.**
+> **v1.0.1.2 supersedes the submitted v1.0.1.1 package.**
 >
-> The packaged filename embeds the version, so v1.0.1.1 lands at a different
-> version-keyed Blob path and does not overwrite the existing v1.0.1.0 object.
-> Upload the new artifact through Partner Center; do not overwrite the prior
-> version-keyed object.
+> The packaged filename embeds the version, so v1.0.1.2 is a distinct binary.
+> Publish and submit only the package produced by the CI run for the final source
+> commit; do not relabel or overwrite an earlier artifact.
 >
-> The bump exists because correcting the packaged icon to a real 20x20 PNG
-> changed the artifact bytes. Shipping different bytes under the same version
-> number would break the assumption that a version-keyed path identifies exactly
-> one build. The GUID is deliberately unchanged, so the visual is still the same
-> product and existing reports keep working.
+> This bump adds the missing grouped-series data-reduction declaration. Without
+> it, Power BI Desktop returns only its default ten `Sample` series and the
+> offline sample renders 50 of 200 observations. The GUID is deliberately
+> unchanged, so the visual remains the same product and existing reports keep
+> working.
 
 ## 2. Listing assets
 
@@ -77,7 +77,7 @@ Do not regenerate the package between recording the checksum and uploading.
 | Privacy policy URL | https:// | <https://atlyn.io/legal/privacy> |
 | Terms of use | - | <https://atlyn.io/legal/terms> |
 | EULA | A file, or Microsoft's standard contract | `EULA.md` |
-| Sample report | `.pbix`, fully offline | Offline project committed at `samples/AtlynSample.pbip`; a manual Desktop **Save As**, after confirming the tables hold data, produces the `.pbix` - see section 4.1 |
+| Sample report | `.pbix`, fully offline | `samples/AtlynSample.pbix`, produced from the committed offline project and verified in Desktop - see section 4.1 |
 
 ### Visual icon
 
@@ -189,8 +189,10 @@ What is already in the project:
 - **Report** in the documented PBIR format
   (`AtlynSample.Report/definition/**.json`), with the visual bound to
   `visualType: atlynDistributionA1B2C3D4E5F6G7H8I9J0` and `Category`, `Sample`, and
-  `Value` each projected as a raw **Column** - the PBIR equivalent of *Don't
-  summarize*, which this visual requires.
+  `Value` assigned to their declared data roles. Power BI Desktop requires `Value`,
+  whose role kind is **Measure**, to use an aggregation projection. Each
+  `(Category, Sample)` pair identifies exactly one row, so `Sum(Value)` yields the
+  original raw observation rather than combining samples.
 - **Semantic model** in TMDL
   (`AtlynSample.SemanticModel/definition/**.tmdl`) holding all 200 rows in a
   **DAX calculated table** (`partition Measurements = calculated` with a
@@ -238,23 +240,13 @@ Steps:
    200 rows. This is the only way to prove the data was baked into the file rather
    than saved empty.
 
-The generated project and tests can verify that the hints page is present and
-reproducible, but only Power BI Desktop can perform the final `.pbix` Save As.
-
-> **Whether a refresh is actually needed here is untested.** A sibling visual's
-> sample report was observed opening in Desktop with empty tables, but that model
-> uses an M `#table(...)` partition, which Power BI resolves through Power Query.
-> This model is a DAX `DATATABLE` calculated table, which the engine evaluates
-> directly, so Desktop may well materialize it on open with no refresh at all.
-> Neither behaviour is asserted here: step 3 checks, and step 4 fixes it if the
-> check fails. That is correct either way.
-
-> **Verification status.** The project is generated against Microsoft's published
-> PBIP, PBIR, and TMDL schemas and is checked structurally by
-> `tests/sampleReport.test.ts` and `npm run audit:submission`. It has **not** been
-> opened in Power BI Desktop from this repository's automation, because Desktop is
-> Windows-desktop GUI software and is not launched by the build. Steps 3 and 4 above
-> are therefore also the real-world verification step.
+> **Desktop verification record.** On 2026-08-06, Power BI Desktop 2.156.951.0
+> opened the 1.0.1.2 PBIP and requested a calculated-table refresh. After
+> **Refresh now**, the visual visibly reported **200 received / 200 rendered**.
+> Desktop saved `samples/AtlynSample.pbix` with the **Public** sensitivity label;
+> reopening that PBIX still reported 200/200 with no refresh or credentials prompt.
+> The PBIX is 69,153 bytes with SHA-256
+> `6416e3465197feb084013769e24387af218bd81cc3e8856cc65bd79a570aa549`.
 
 > **Format versions.** `definition.pbir` uses `"version": "4.0"` and
 > `definition.pbism` uses `"version": "4.2"` on purpose. Microsoft documents

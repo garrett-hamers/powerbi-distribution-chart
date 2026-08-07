@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import JSZip from "jszip";
@@ -11,8 +12,8 @@ import { SAMPLE_SLUG, buildSampleReportFiles } from "./build-sample-report.mjs";
  * Every rule here maps to a published Partner Center requirement for Power BI visuals:
  * https://learn.microsoft.com/en-us/power-bi/developer/visuals/office-store
  *
- * The one requirement this script cannot enforce is the sample .pbix report, which only
- * Power BI Desktop can author. Its status is reported explicitly instead of being faked.
+ * Power BI Desktop is the only supported author of the sample .pbix report. Once Desktop
+ * has produced it, this gate requires the committed binary to remain present.
  */
 
 const LOGO_SIZE = 300;
@@ -23,6 +24,14 @@ const MAX_SCREENSHOT_BYTES = 1024 * 1024;
 const MIN_SCREENSHOTS = 1;
 const MAX_SCREENSHOTS = 5;
 const FROZEN_GUID = "atlynDistributionA1B2C3D4E5F6G7H8I9J0";
+const SUBMITTED_VERSION = "1.0.1.2";
+const SUBMITTED_EMBEDDED_SHA256 = new Map([
+  ["package.json", "35b592ab42cdaebd0da0afe770e616a065345db522e70a9e6c1dd17e27c22ea8"],
+  [
+    `resources/${FROZEN_GUID}.pbiviz.json`,
+    "18821b402307b7aba707a3c2a5ad2450538d4f0fe1876d3b56910ed8371db615",
+  ],
+]);
 const DISTRIBUTION_PAGE_NAME = "Cycle time distribution";
 const HINTS_PAGE_NAME = "Hints and tips";
 const PRIVACY_POLICY_URL = "https://atlyn.io/legal/privacy";
@@ -65,6 +74,7 @@ const ensure = (condition, message) => {
 };
 
 const readJson = (target) => JSON.parse(readFileSync(target, "utf8"));
+const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 
 const requireNonEmptyFile = (target, minimumBytes = 1) => {
   const stats = statSync(target);
@@ -268,7 +278,13 @@ await check("offline sample report project matches its deterministic generator",
       if (entry.isDirectory()) {
         walk(absolute);
       } else if (entry.isFile()) {
-        committed.set(relative(absolute), readFileSync(absolute, "utf8"));
+        const relativePath = relative(absolute);
+        // Desktop authors this binary after the deterministic PBIP has passed its
+        // manual 200/200 check. It is audited separately below, not regenerated.
+        if (relativePath === `samples/${SAMPLE_SLUG}.pbix`) {
+          continue;
+        }
+        committed.set(relativePath, readFileSync(absolute, "utf8"));
       }
     }
   };
@@ -280,9 +296,12 @@ await check("offline sample report project matches its deterministic generator",
 
   // Without a built package the generator cannot emit the embedded visual, so compare only
   // the files it was able to produce and flag the gap separately.
-  const comparable = packageBuilt
-    ? [...committed.keys()]
-    : [...committed.keys()].filter((key) => !key.includes("/CustomVisuals/"));
+  const preservesSubmittedVisual = visual.version === SUBMITTED_VERSION;
+  const comparable = [...committed.keys()].filter((key) => (
+    packageBuilt && !preservesSubmittedVisual
+      ? true
+      : !key.includes("/CustomVisuals/")
+  ));
 
   const missing = [...expected.keys()].filter((key) => !committed.has(key));
   ensure(missing.length === 0, `samples/ is missing generated file(s): ${missing.join(", ")}`);
@@ -296,7 +315,9 @@ await check("offline sample report project matches its deterministic generator",
     `samples/ is stale; re-run \`npm run package && npm run sample-report\`. Drifted: ${drifted.join(", ")}`,
   );
 
-  const embeddedNote = packageBuilt
+  const embeddedNote = preservesSubmittedVisual
+    ? `submitted ${SUBMITTED_VERSION} visual audited separately by SHA-256`
+    : packageBuilt
     ? "embedded visual verified against dist/"
     : "embedded visual NOT verified (dist/ has no package)";
   return `${comparable.length} of ${committed.size} files compared, ${embeddedNote}`;
@@ -327,21 +348,32 @@ await check("sample report binds the frozen GUID with declared roles and no exte
   ensure(visualIds.length === 1, `Expected exactly one distribution visual, found ${visualIds.length}.`);
 
   const visualPath = path.join(visualsRoot, visualIds[0], "visual.json");
-  const visualText = readFileSync(visualPath, "utf8");
-  const visual = JSON.parse(visualText);
+  const visual = readJson(visualPath);
   ensure(
     visual.visual.visualType === FROZEN_GUID,
     `Sample report binds "${visual.visual.visualType}" instead of the frozen GUID.`,
   );
 
-  const stateKeys = Object.keys(visual.visual.query.queryState);
+  const queryState = visual.visual.query.queryState;
+  const stateKeys = Object.keys(queryState);
   stateKeys.forEach((key) => ensure(
     roleNames.has(key),
     `queryState key "${key}" is not a capabilities.json data role.`,
   ));
   ensure(
-    !visualText.includes("Aggregation"),
-    "Sample report aggregates a field; Atlyn Distribution requires raw, unsummarized observations.",
+    stateKeys.join(",") === "Category,Sample,Value",
+    `Sample queryState must bind Category, Sample, and Value; found ${stateKeys.join(", ")}.`,
+  );
+  ensure(
+    queryState.Category.projections?.[0]?.field?.Column
+      && queryState.Sample.projections?.[0]?.field?.Column,
+    "Sample Category and Sample roles must project raw columns.",
+  );
+  const valueAggregation = queryState.Value.projections?.[0]?.field?.Aggregation;
+  ensure(
+    valueAggregation?.Function === 0
+      && valueAggregation.Expression?.Column?.Property === "Value",
+    "Sample Value role must use Sum(Measurements.Value), as required for a Measure role.",
   );
 
   const hintsVisualRoot = path.join(pagesRoot, hintsPageId, "visuals");
@@ -728,13 +760,28 @@ await check("sample semantic model keeps the TMDL shape known to open in Desktop
     + `${calculatedColumns} calculated column(s) with no explicit dataType`;
 });
 
-await check("sample report embeds the current build of the visual", async () => {
+await check("sample report embeds the expected visual", async () => {
   const reportFolder = `${SAMPLE_SLUG}.Report`;
   const embeddedRoot = path.join(root, "samples", reportFolder, "CustomVisuals", FROZEN_GUID);
   if (!existsSync(embeddedRoot)) {
     // The generator omits the embedded visual when dist/ has no package. That is already
     // reported by the drift check; do not invent a second failure for it.
     return "no embedded visual to compare (dist/ has no package)";
+  }
+
+  const entries = ["package.json", `resources/${FROZEN_GUID}.pbiviz.json`];
+  if (visual.version === SUBMITTED_VERSION) {
+    for (const entry of entries) {
+      const embeddedPath = path.join(embeddedRoot, entry);
+      ensure(existsSync(embeddedPath), `Embedded visual is missing ${entry}.`);
+      const actual = sha256(readFileSync(embeddedPath));
+      const expected = SUBMITTED_EMBEDDED_SHA256.get(entry);
+      ensure(
+        actual === expected,
+        `Submitted ${SUBMITTED_VERSION} embedded ${entry} has SHA-256 ${actual}; expected ${expected}.`,
+      );
+    }
+    return `${entries.length} embedded file(s) match submitted ${SUBMITTED_VERSION} SHA-256 values`;
   }
 
   const artifactPath = path.join(root, "dist", `${FROZEN_GUID}.${visual.version}.pbiviz`);
@@ -747,8 +794,6 @@ await check("sample report embeds the current build of the visual", async () => 
   // Compared byte-for-byte against the archive rather than trusted: a stale embedded copy
   // ships a different visual than the one under test, and nothing else would notice.
   const archive = await JSZip.loadAsync(readFileSync(artifactPath));
-  const entries = ["package.json", `resources/${FROZEN_GUID}.pbiviz.json`];
-
   const stale = [];
   for (const entry of entries) {
     const embeddedPath = path.join(embeddedRoot, entry);
@@ -771,22 +816,13 @@ await check("sample report embeds the current build of the visual", async () => 
 });
 
 const sampleReportPbix = path.join(root, "samples", `${SAMPLE_SLUG}.pbix`);
-const sampleReportStatus = existsSync(sampleReportPbix)
-  ? `present (samples/${SAMPLE_SLUG}.pbix)`
-  : "MISSING";
+await check("Desktop-authored sample PBIX is present", () => {
+  const bytes = requireNonEmptyFile(sampleReportPbix, 1024);
+  return `${bytes} bytes`;
+});
 
 console.log("Atlyn Distribution - AppSource submission asset audit");
 console.log(checks.join("\n"));
-console.log("");
-console.log(`  INFO  Sample .pbix report: ${sampleReportStatus}`);
-if (sampleReportStatus === "MISSING") {
-  console.log(`        The offline project is committed at samples/${SAMPLE_SLUG}.pbip and is validated above.`);
-  console.log("        A .pbix cannot be produced headlessly - its DataModel part is a binary Analysis");
-  console.log("        Services backup image. Open the PBIP in Power BI Desktop and confirm the visual");
-  console.log("        renders with data; if any table is empty, run Home > Refresh > Schema and data");
-  console.log("        first. Only then File > Save As .pbix - saving while the tables are empty ships");
-  console.log("        a .pbix with no data. See docs/partner-center-submission.md section 4.1.");
-}
 
 if (failures.length > 0) {
   console.error(`\n${failures.length} submission asset check(s) failed:`);

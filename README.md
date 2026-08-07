@@ -9,10 +9,13 @@ because an aggregate is not a raw distribution. It calculates Hyndman-Fan Type
 observations are retained. When IQR is zero, the repeated value is still the
 Tukey fence, so any value outside that fence remains a genuine outlier.
 
-The raw-observation contract is deliberately bounded to the 30,000-row host
-window. This release does not call `fetchMoreData`: categorical grouped
-segments cannot be appended safely without a host-level proof that sample
-identity and duplicate rows are reconciled. Instead, the visual reports the
+The raw-observation contract is deliberately bounded to 30,000 host categories
+and 30,000 grouped sample series. Both reduction axes are declared explicitly;
+without the grouped-series declaration Power BI applies its default ten-series
+limit before the visual receives data. This release does not call
+`fetchMoreData`: categorical grouped segments cannot be appended safely without
+a host-level proof that sample identity and duplicate rows are reconciled.
+Instead, the visual reports the
 received, rendered, invalid, and dropped row counts, visibly labels a full
 window as potentially partial, and never claims population completeness. It
 also provides native host tooltips with touch long-press behavior,
@@ -145,9 +148,11 @@ third-party packaging tool is involved.
 built `.pbiviz`, and `npm run audit:submission` regenerates it in memory and fails
 if the committed tree has drifted. `tests/sampleReport.test.ts` additionally
 asserts that the visual binds the frozen GUID, that every `queryState` key is a
-declared `capabilities.json` data role, that no projection is aggregated, and that
-the semantic model contains no Power Query partition, shared expression, or data
-source declaration.
+declared `capabilities.json` data role, and that the `Value` measure role uses the
+aggregation projection Power BI Desktop requires. `Category` and `Sample` uniquely
+identify each row, so `Sum(Value)` preserves one raw observation per group. The test
+also asserts that the semantic model contains no Power Query partition, shared
+expression, or data source declaration.
 
 The embedded bundle is always the plain `npm run package` output, which is the
 artifact recorded in `dist/release-metadata.json` and uploaded to Partner Center.

@@ -37,7 +37,8 @@ still has to do by hand.
 | Build command | `npm run package` |
 | Reproducibility gate | `npm run package:reproducible` (packages twice, requires identical filename, byte count, and SHA-256) |
 | Release manifest | `npm run release:metadata` -> `dist/release-metadata.json` |
-| **Canonical binary** | the `pbiviz-<commit-sha>` artifact published by the CI run for the submitted commit |
+| **Canonical binary** | `pbiviz-e2b17c68c5cb0dc504fe1501122ae62c163e45e0` from CI run `31222816784` |
+| **Submitted PBIVIZ SHA-256** | `c88e0699c7442fa9ba988433ac4668dbe4154e0ae9a03a5c26fedd1425716779` |
 
 **Upload CI's binary, not a local build.** Every CI run publishes the built
 `.pbiviz` as a downloadable artifact named `pbiviz-<commit-sha>`, and prints its
